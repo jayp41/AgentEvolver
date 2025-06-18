@@ -1,6 +1,6 @@
 hydra:
   searchpath:
-    - file://verl/verl/trainer/config
+    - file://external/verl/verl/trainer/config
 
 defaults:
   - ppo_trainer
@@ -24,6 +24,8 @@ actor_rollout_ref:
     custom_dataflow_cls:
       path: ""
       name: ""
+    use_qwen3: True
+    max_env_worker: 64
 
 thread_pool:
   max_workers: 5
@@ -35,6 +37,6 @@ env_service:
 experience_maker:
   base_url: "http://127.0.0.1:8001"
   workspace_id: "w1_agentflow"
-  enable_summarizer: True
-  enable_context_generator: True
+  enable_summarizer: False
+  enable_context_generator: False
   retrieve_top_k: 3

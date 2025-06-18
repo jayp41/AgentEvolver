@@ -21,7 +21,7 @@ from beyondagent.schema.trajectory import Trajectory, Sample
 
 
 class ParallelEnvManager(object):
-    def __init__(self, config: DictConfig, async_rollout_manager: AsyncLLMServerManager, max_parallel: int = 32,
+    def __init__(self, config: DictConfig, async_rollout_manager: AsyncLLMServerManager, max_parallel: int,
                  **kwargs):
         super().__init__(**kwargs)
 
@@ -122,6 +122,9 @@ class ParallelEnvManager(object):
         samples = []
         for trajectory in trajectories:
             messages = trajectory.steps
+            if len(messages) == 0:
+                # Fixme: empty trajectory yunpeng
+                messages = [{"role": "user", "content": ""}, {"role": "assistant", "content": ""}]
             full_text = self.tokenizer.apply_chat_template(messages, tokenize=False)
             outputs = self.tokenizer(full_text, return_tensors="pt", padding=False)
             input_ids = outputs["input_ids"][0].tolist()  # 移除batch维度

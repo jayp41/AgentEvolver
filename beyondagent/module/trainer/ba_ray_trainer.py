@@ -105,7 +105,7 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
         self.val_reward_fn = parse_reward_from_dataproto
 
         self.em_client = EMClient(base_url=self.config.experiencemaker.base_url)
-        self.env_manager = ParallelEnvManager(config=self.config, async_rollout_manager=self.async_rollout_manager)
+        self.env_manager = ParallelEnvManager(config=self.config, async_rollout_manager=self.async_rollout_manager, max_parallel=self.config.actor_rollout_ref.rollout.max_env_worker)
         self.thread_pool = ThreadPoolExecutor(max_workers=self.config.thread_pool.max_workers)
 
     def _validate(self):
@@ -316,6 +316,9 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
                                     ) for i in range(len(gen_batch))]
                             trajectories = self.env_manager.rollout(tasks, mode="sample")
                             gen_batch_output = self.env_manager.to_dataproto(trajectories)
+                            
+                            num_term_traj = sum([traj.is_terminated  for traj in trajectories])
+                            num_not_none_traj = sum([len(traj.steps)>0  for traj in trajectories])
 
                             # gen_batch_output = self.async_rollout_manager.generate_sequences(gen_batch)
                             self.async_rollout_manager.sleep()
@@ -508,6 +511,8 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
                     {
                         "training/global_step": self.global_steps,
                         "training/epoch": epoch,
+                        "training/num_not_none_traj": num_not_none_traj,
+                        "training/num_term_traj": num_term_traj
                     }
                 )
                 # collect metrics

@@ -1,10 +1,11 @@
 from loguru import logger
+from omegaconf import DictConfig
 
 from beyondagent.client.em_client import EMClient
 from beyondagent.client.env_client import EnvClient
 from beyondagent.module.agent_flow.base_agent_flow import BaseAgentFlow
 from beyondagent.schema.trajectory import Trajectory
-
+from beyondagent.utils.utils import convert_tool_to_user_message
 
 class AgentFlow(BaseAgentFlow):
 
@@ -26,7 +27,11 @@ class AgentFlow(BaseAgentFlow):
                 trajectory.steps[-1]["content"] = history_experience + "\n\n" + trajectory.steps[-1]["content"]
 
         for act_step in range(self.max_steps):
-            prompt_text = self.tokenizer.apply_chat_template(trajectory.steps,
+            # if use qwen3, add /no_think
+            if self.config.actor_rollout_ref.rollout.use_qwen3:
+                trajectory.steps[-1]["content"] += " /no_think"
+
+            prompt_text = self.tokenizer.apply_chat_template(trajectory.steps, 
                                                              tokenize=False,
                                                              add_generation_prompt=True)
             current_token_len = len(self.tokenizer(prompt_text, return_tensors="pt", padding=False)["input_ids"][0])
@@ -41,11 +46,11 @@ class AgentFlow(BaseAgentFlow):
             trajectory.steps.extend(llm_output)
 
             env_output = env.step(instance_id, llm_output[0])
+            # convert role_tool to role_user message
+            if env_output["state"]["role"] == "tool":
+                env_output["state"] = convert_tool_to_user_message(env_output["state"], self.tokenizer, format="qwen")
+            
             state_content: str = env_output["state"]["content"]
-            # yunpeng add: 
-            # if env_output["state"]["role"]=="tool":
-            #     env_output["state"]["role"] = "user"
-
             if len(self.tokenizer(state_content, return_tensors="pt", padding=False)["input_ids"][
                        0]) > self.max_env_len:
                 env_output["state"]["content"] = state_content[:self.max_env_len]

@@ -76,10 +76,12 @@ class ParallelEnvManager(object):
             sampling_params["top_p"] = self.rollout_config.val_kwargs.top_p
 
         llm_chat_fn = self.get_llm_chat_fn(sampling_params)
-        agent_flow: BaseAgentFlow = AgentFlow(llm_chat_fn=llm_chat_fn, tokenizer=self.tokenizer, **kwargs)
+        agent_flow: BaseAgentFlow = AgentFlow(llm_chat_fn=llm_chat_fn, tokenizer=self.tokenizer, config=self.config,
+                                              **kwargs)
 
         # FIXME pass env_type & task_id
-        env_worker = EnvWorker(env_type=task.env_type, task_id=task.task_id, thread_index=thread_index, config=self.config)
+        env_worker = EnvWorker(env_type=task.env_type, task_id=task.task_id, thread_index=thread_index,
+                               config=self.config)
         trajectory: Trajectory = env_worker.execute(data_id=data_id, rollout_id=rollout_id, agent_flow=agent_flow)
 
         return trajectory

@@ -20,8 +20,10 @@ This trainer supports model-agonistic model initialization with huggingface
 
 import uuid
 from collections import defaultdict
+from concurrent.futures.thread import ThreadPoolExecutor
 from copy import deepcopy
 from pprint import pprint
+from typing import List
 
 import numpy as np
 import ray
@@ -44,6 +46,7 @@ from verl.utils.metric import reduce_metrics
 from beyondagent.client.em_client import EMClient
 from beyondagent.module.env_manager.env_manager import ParallelEnvManager
 from beyondagent.schema.task import Task
+from beyondagent.schema.trajectory import Trajectory
 
 
 def parse_reward_from_dataproto(data: DataProto, return_dict=False) -> dict | torch.Tensor:
@@ -92,18 +95,18 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
     """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # self.remote_batch_experience_summarize = ray.remote(batch_experience_summarize)
-        self.em_client = EMClient()
+        self.em_client: EMClient | None = None
         self.env_manager: ParallelEnvManager | None = None
+        self.thread_pool: ThreadPoolExecutor | None = None
 
     def init_workers(self):
         super().init_workers()
         self.reward_fn = parse_reward_from_dataproto
         self.val_reward_fn = parse_reward_from_dataproto
-        self.env_manager = ParallelEnvManager(
-            config=self.config, 
-            async_rollout_manager=self.async_rollout_manager
-        )
+
+        self.em_client = EMClient(base_url=self.config.experiencemaker.base_url)
+        self.env_manager = ParallelEnvManager(config=self.config, async_rollout_manager=self.async_rollout_manager)
+        self.thread_pool = ThreadPoolExecutor(max_workers=self.config.thread_pool.max_workers)
 
     def _validate(self):
         data_source_lst = []
@@ -163,7 +166,7 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
                 tasks = [Task(
                             task_id=test_gen_batch_padded.non_tensor_batch["extras"][i]["task_id"], 
                             query=test_gen_batch_padded.non_tensor_batch["raw_prompt"][i],
-                            env_type=self.config.beyond_agent.env_type
+                    env_type=self.config.env_service.env_type
                          ) for i in range(len(test_gen_batch_padded))]
                 trajectories = self.env_manager.rollout(tasks, mode="validate")
                 test_output_gen_batch_padded = self.env_manager.to_dataproto(trajectories)
@@ -300,6 +303,7 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
                 with _timer("step", timing_raw):
                     # generate a batch
                     with _timer("gen", timing_raw):
+                        trajectories: List[Trajectory] = []
                         if not self.async_rollout_mode:
                             gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
                         else:
@@ -308,7 +312,7 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
                             tasks = [Task(
                                         task_id=gen_batch.non_tensor_batch["extras"][i]["task_id"], 
                                         query=gen_batch.non_tensor_batch["raw_prompt"][i],
-                                        env_type=self.config.beyond_agent.env_type
+                                env_type=self.config.env_service.env_type
                                     ) for i in range(len(gen_batch))]
                             trajectories = self.env_manager.rollout(tasks, mode="sample")
                             gen_batch_output = self.env_manager.to_dataproto(trajectories)
@@ -338,11 +342,13 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
                     batch = batch.union(gen_batch_output)
 
                     batch.batch["response_mask"] = compute_response_mask(batch)
-                    
-                    # summary for experience of beyond_agent, updating candidate context
-                    if self.config.beyond_agent.enable_summary:
-                        with _timer("beyondagent_summary", timing_raw):
-                            self.em_client.call_summarizer(trajectories=trajectories, workspace_id="default")
+
+                    # summary for experience of experience_maker, updating candidate context
+                    summary_task = None
+                    if self.config.experience_maker.enable_summarizer:
+                        summary_task = self.thread_pool.submit(self.em_client.call_summarizer,
+                                                               trajectories=trajectories,
+                                                               workspace_id=self.config.experience_maker.workspace_id)
 
                     # balance the number of valid tokens on each dp rank.
                     # Note that this breaks the order of data inside the batch.
@@ -434,7 +440,6 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
                             batch.batch["token_level_rewards"] = batch.batch["token_level_scores"]
 
                         # compute advantages, executed on the driver process
-
                         norm_adv_by_std_in_grpo = self.config.algorithm.get("norm_adv_by_std_in_grpo", True)  # GRPO adv normalization factor
 
                         batch = compute_advantage(
@@ -464,8 +469,11 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
                         actor_output_metrics = reduce_metrics(actor_output.meta_info["metrics"])
                         metrics.update(actor_output_metrics)
 
-                    # if self.config.beyond_agent.enable_summary:
-                    #     summary_result = ray.get(future_summary)
+                    if summary_task is not None:
+                        experience_list = summary_task.result()
+                        if experience_list:
+                            for i, experience in enumerate(experience_list):
+                                print(f"index={i} experience={experience}")
                     
                     # Log rollout generations if enabled
                     rollout_data_dir = self.config.trainer.get("rollout_data_dir", None)
@@ -476,8 +484,6 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
                             outputs = self.tokenizer.batch_decode(batch.batch["responses"], skip_special_tokens=True)
                             scores = batch.batch["token_level_scores"].sum(-1).cpu().tolist()
                             self._dump_generations(
-
-
                                 inputs=inputs,
                                 outputs=outputs,
                                 scores=scores,

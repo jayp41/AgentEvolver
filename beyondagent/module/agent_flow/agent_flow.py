@@ -8,25 +8,22 @@ from beyondagent.schema.trajectory import Trajectory
 
 class AgentFlow(BaseAgentFlow):
 
-    def __init__(self, enable_historical_experience: bool = False, **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.enable_historical_experience: bool = enable_historical_experience
         self.instruction_template_ids = self.tokenizer.encode("<|im_start|>user\n")
         self.response_template_ids = self.tokenizer.encode("<|im_start|>assistant\n")
-        self.em_client = EMClient()
+        self.em_client = EMClient(base_url=self.config.experiencemaker.base_url)
 
-    def add_historical_experience(self, trajectory: Trajectory):
-        if self.enable_historical_experience:
-            history_experience = self.em_client.call_context_generator(trajectory=trajectory,
-                                                                       retrieve_top_k=1,
-                                                                       workspace_id="default")
+    def execute(self, trajectory: Trajectory, env: EnvClient, instance_id: str, **kwargs) -> Trajectory:
+        if self.config.experiencemaker.enable_context_generator:  # add by jinli 0618
+            history_experience = self.em_client.call_context_generator(
+                trajectory=trajectory,
+                retrieve_top_k=self.config.experiencemaker.retrieve_top_k,
+                workspace_id=self.config.experiencemaker.workspace_id)
+
             if history_experience:
                 logger.info(f"history_experience={history_experience}")
                 trajectory.steps[-1]["content"] = history_experience + "\n\n" + trajectory.steps[-1]["content"]
-
-    def execute(self, trajectory: Trajectory, env: EnvClient, instance_id: str, **kwargs) -> Trajectory:
-        if self.enable_historical_experience:  # add by jinli 0618
-            self.add_historical_experience(trajectory)
 
         for act_step in range(self.max_steps):
             prompt_text = self.tokenizer.apply_chat_template(trajectory.steps,

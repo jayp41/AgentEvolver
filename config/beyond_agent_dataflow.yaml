@@ -21,24 +21,20 @@ actor_rollout_ref:
     multi_turn:
       enabled: True
       format: llama3_json
-      # tool_config_path: "./config/tool_config/gsm8k_tool_config.yaml"
     custom_dataflow_cls:
       path: ""
       name: ""
 
-beyond_agent:
+thread_pool:
+  max_workers: 5
+
+env_service:
   env_type: "appworld"
   env_url: "http://127.0.0.1:8000"
-  enable_summary: True
-  enable_context: True
-  # base_url: "http://127.0.0.1:8000"
-  base_url: "http://10.1.8.169:8000"
-  # base_url: "http://47.97.187.161:8000"
-  context_class_path: "beyondagent.core.module.context_generator.base_context_generator"
-  context_class_name: "MockContextGenerator"
-  context_config_path: "beyondagent/config/empty.json"
-  summarize_batch_size: 100
-  summarize_mini_batch_size: 10
-  summarizer_class_path: "beyondagent.core.module.summarizer.base_summarizer"
-  summarizer_class_name: "MockSummarizer"
-  summarizer_config_path: "beyondagent/config/empty.json"
+
+experience_maker:
+  base_url: "http://127.0.0.1:8001"
+  workspace_id: "w1_agentflow"
+  enable_summarizer: True
+  enable_context_generator: True
+  retrieve_top_k: 3

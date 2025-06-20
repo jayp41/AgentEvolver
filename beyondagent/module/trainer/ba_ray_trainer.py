@@ -176,7 +176,7 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
             print("validation generation end")
 
             # Store original inputs
-            input_ids = test_output_gen_batch.batch["input_ids"]
+            input_ids = test_output_gen_batch.batch["prompts"]
             # TODO: Can we keep special tokens except for padding tokens?
             input_texts = [self.tokenizer.decode(ids, skip_special_tokens=True) for ids in input_ids]
             sample_inputs.extend(input_texts)

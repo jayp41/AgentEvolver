@@ -51,7 +51,7 @@ python3 -m beyondagent.main_ppo \
     algorithm.use_kl_in_reward=False \
     trainer.n_gpus_per_node=2 \
     trainer.critic_warmup=0 \
-    trainer.logger=['console', 'wandb'] \
+    trainer.logger=['console','wandb'] \
     trainer.project_name='beyondagent' \
     trainer.experiment_name='qwen3-4b_appworld_jinli' \
     trainer.nnodes=1 \

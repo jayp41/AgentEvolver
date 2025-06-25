@@ -1,5 +1,4 @@
 from typing import Any, Callable
-from omegaconf import DictConfig
 
 from omegaconf import DictConfig
 

@@ -24,7 +24,6 @@ class AgentFlow(BaseAgentFlow):
                 retrieve_top_k=self.config.experience_maker.retrieve_top_k,
                 workspace_id=self.config.experience_maker.workspace_id)
 
-
             if history_experience:
                 logger.info(f"history_experience={history_experience}")
                 new_content = history_experience + "\n\n" + trajectory.steps[-1]["content"]
@@ -55,7 +54,8 @@ class AgentFlow(BaseAgentFlow):
             llm_output = self.llm_chat_fn(trajectory.steps, request_id=request_id)
             time_cost = round(time.time() - t_start, 2)
             new_request_id = llm_output.pop("request_id", None)
-            logger.info(f"llm_output={llm_output} "
+            logger.info(f"act_step={act_step} "
+                        f"llm_output={llm_output} "
                         f"new_request_id={new_request_id} "
                         f"request_id={request_id} "
                         f"time_cost={time_cost}")

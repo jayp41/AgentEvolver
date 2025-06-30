@@ -47,15 +47,15 @@ python3 -m beyondagent.main_ppo \
     actor_rollout_ref.rollout.name=vllm \
     actor_rollout_ref.rollout.mode=async \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.6 \
-    actor_rollout_ref.rollout.n=6 \
+    actor_rollout_ref.rollout.n=8 \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
     algorithm.use_kl_in_reward=False \
-    trainer.n_gpus_per_node=4 \
+    trainer.n_gpus_per_node=8 \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='beyondagent' \
-    trainer.experiment_name="qwen2.5-7b_appworld_jinli_${current_time}" \
+    trainer.experiment_name="qwen2.5-7b_appworld_jinli_${current_time}_8gpu" \
     trainer.nnodes=1 \
     trainer.save_freq=-1 \
     trainer.test_freq=20 \
@@ -70,8 +70,8 @@ python3 -m beyondagent.main_ppo \
     critic.forward_max_token_len_per_gpu=20480 \
     data.train_files=/mnt/data_cpfs/zouanni.zan/data/appworld_parquet/train.parquet \
     data.val_files=/mnt/data_cpfs/zouanni.zan/data/appworld_parquet/dev.parquet \
-    experience_maker.enable_summarizer=True \
-    experience_maker.enable_context_generator=True \
-    experience_maker.workspace_id="w1_qwen25_v1_${current_time}" \
+    experience_maker.enable_summarizer=False \
+    experience_maker.enable_context_generator=False \
+    experience_maker.workspace_id="w1_qwen25_v2_${current_time}" \
     2>&1 | tee "$log_file" \
     $@

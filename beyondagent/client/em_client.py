@@ -52,7 +52,7 @@ class EMClient(HttpClient):
         response = self.request(json_data=json_data, headers={"Content-Type": "application/json"})
         if response is None:
             logger.warning("error call_context_generator")
-            return ""
+            return "", time.time() - start_time
 
         return response["experiences"], time.time() - start_time
 

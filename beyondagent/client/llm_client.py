@@ -2,20 +2,19 @@ from abc import ABC, abstractmethod
 import json
 import os
 import time
-from typing import Any, Optional, override
+from typing import Any, Optional, Protocol, override
 
 from loguru import logger
 import requests
 
 
-class LlmClient(ABC):
-    @abstractmethod
+class LlmClient(Protocol):
     def chat(self, messages: list[dict[str, str]], sampling_params: dict[str, Any]) -> str:
-        pass
+        ...
 
 
 
-class DashScopeClient(LlmClient):
+class DashScopeClient:
     """阿里云百炼API客户端"""
     
     def __init__(self, api_key: Optional[str] = None, model_name: str = "qwen-plus", 

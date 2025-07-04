@@ -26,7 +26,7 @@ class TaskManager(object):
         self._env_service_url = env_service_url
         self._max_llm_retries = max_llm_retries
         
-        self._tokenizer = tokenizer # TODO: 这玩意不该在这
+        self._tokenizer = tokenizer # TODO: 这玩意似乎不该在这
     
     def _step_explore_batch(self,tasks:Sequence[Task]):
         # TODO: I have no idea what data_id and rollout_id are.
@@ -107,6 +107,7 @@ class TaskManager(object):
 @hydra.main(config_path="/Users/cc/projects/BeyondAgent/config", config_name="beyond_agent_dataflow", version_base=None)
 def test(config):
     import transformers
+    import json
     tokenizer=transformers.AutoTokenizer.from_pretrained("Qwen/Qwen2.5-0.5B-Instruct", trust_remote_code=True)
     manager=TaskManager(config,DashScopeClient(),tokenizer=tokenizer,env_service_url="http://localhost:8000")
     if not os.path.exists('test-explore.json'):
@@ -118,6 +119,8 @@ def test(config):
             traj=Trajectory.parse_raw(f.read())
     
     t=manager._step_summarize([traj])
+    with open('test-summarize.json','w') as f:
+        f.write(json.dumps(t,indent=2,ensure_ascii=False))
 
 if __name__=="__main__":
     test()

@@ -46,6 +46,8 @@ from verl.utils.metric import reduce_metrics
 
 from beyondagent.client.em_client import EMClient
 from beyondagent.module.env_manager.env_manager import ParallelEnvManager
+from beyondagent.module.task_manager import adapter as task_adapter
+from beyondagent.module.task_manager import TaskManager,NaiveTaskObjectiveRetrieval
 from beyondagent.schema.task import Task
 from beyondagent.schema.trajectory import Trajectory
 
@@ -98,7 +100,18 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
         super().__init__(**kwargs)
         self.em_client: EMClient | None = None
         self.env_manager: ParallelEnvManager | None = None
+        self.task_manager:TaskManager|None=None
         self.thread_pool: ThreadPoolExecutor | None = None
+        
+        self._collate_fn=kwargs.get("collate_fn")
+        self._train_sampler=kwargs.get("train_sampler")
+        self._train_tasks=task_adapter.convert_to_tasks(self.train_dataset,self.config.env_service.env_type) # type: ignore
+        self._val_tasks=task_adapter.convert_to_tasks(self.val_dataset,self.config.env_service.env_type) # type: ignore
+        del self.train_dataloader
+        del self.train_dataset
+        del self.val_dataloader
+        del self.val_dataset
+
 
     def init_workers(self):
         """Initialize distributed training workers using Ray backend.
@@ -191,6 +204,21 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
         self.em_client = EMClient(base_url=self.config.experience_maker.base_url)
         self.env_manager = ParallelEnvManager(config=self.config, async_rollout_manager=self.async_rollout_manager, max_parallel=self.config.actor_rollout_ref.rollout.max_env_worker)
         self.thread_pool = ThreadPoolExecutor(max_workers=self.config.thread_pool.max_workers)
+        
+        self.task_manager=TaskManager(
+            config=self.config,
+            llm_client=self.async_rollout_manager,
+            old_retrival=NaiveTaskObjectiveRetrieval(),
+            tokenizer=self.tokenizer,
+            env_service_url=self.config.env_service.base_url,
+            max_llm_retries=self.config.task_manager.max_llm_retries,
+            max_explore_step=self.config.task_manager.max_explore_step,
+            num_explore_threads=self.config.task_manager.num_explore_threads,
+            n=self.config.task_manager.n,
+        )
+        train_dataset=self.task_manager.get_dataset(tasks=self._train_tasks,bs=self.config.task_manager.bs,tokenizer=self.tokenizer,config=self.config)
+        # reinit dataloader to use the new dataset
+        self._create_dataloader(train_dataset,self.val_dataset,self._collate_fn,self._train_sampler)
 
     def _validate_config(self):
         # 0623 yunpeng add. keep the same as the original func except for the param of tool_config_path

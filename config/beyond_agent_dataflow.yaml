@@ -42,6 +42,13 @@ env_service:
   env_type: "appworld"
   env_url: "http://127.0.0.1:8000"
 
+task_manager:
+  n: 2
+  max_llm_retries: 3
+  max_explore_step: 10
+  num_explore_threads: ${thread_pool.max_workers}
+
+
 experience_maker:
   base_url: "http://127.0.0.1:8001"
   workspace_id: "w1_agentflow"

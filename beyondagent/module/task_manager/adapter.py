@@ -4,7 +4,7 @@ from typing import Iterator, Optional, Sequence
 import uuid
 
 
-from beyondagent.schema.task import TaskObjective
+from beyondagent.schema.task import Task, TaskObjective
 from verl.utils.dataset.rl_dataset import RLHFDataset
 from torch.utils.data import IterableDataset
 import pandas as pd
@@ -12,6 +12,19 @@ from omegaconf import DictConfig, ListConfig
 from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.processing_utils import ProcessorMixin
 
+def convert_to_tasks(dataset:RLHFDataset,env_type:str)->list[Task]:
+    """将原本的 RLHFDataset 转为供 TaskManager 使用的 Task 列表
+    """
+    res=[]
+    for record in dataset:
+        task = Task(
+            task_id=record["extras"]["task_id"],
+            env_type=env_type,
+            query=record["raw_prompt"],
+        )
+        res.append(task)
+    
+    return res
 
 def to_rl_dataset(
     tasks: Sequence[TaskObjective],

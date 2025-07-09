@@ -125,7 +125,8 @@ class TaskManager(object):
                 self._bs = bs
 
                 self._dataset = OnflyRlDataset(release_used_dataset=True)
-
+            
+            # TODO: trainloader 的 threading 必须是 1
             def reload(self):
                 # avoid data loader calling reload multiple times
                 with lock:

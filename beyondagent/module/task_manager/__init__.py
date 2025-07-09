@@ -27,10 +27,10 @@ from beyondagent.module.task_manager import adapter
 from beyondagent.module.task_manager.adapter import OnflyRlDataset, to_rl_dataset
 from beyondagent.module.task_manager.env_worker import EnvWorker
 from beyondagent.module.task_manager.filters import TaskPostFilter
-from beyondagent.module.task_manager.prompt_explore import (
+from beyondagent.module.task_manager.prompts.prompt_explore import (
     get_agent_interaction_system_prompt,
 )
-from beyondagent.module.task_manager.prompt_summarize import (
+from beyondagent.module.task_manager.prompts.prompt_summarize import (
     get_task_summarize_prompt,
     parse_tasks_from_response,
 )

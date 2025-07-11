@@ -3,6 +3,7 @@ import copy
 import functools
 import json
 import os
+import random
 import threading
 import time
 from typing import (
@@ -44,10 +45,14 @@ class TaskManagerProps(TypedDict):
     max_explore_step: int
     num_explore_threads: int
     n: int
+    
     exploration_llm_temperature: NotRequired[float]
     exploration_llm_top_p: NotRequired[float]
     exploration_llm_top_k: NotRequired[int]
+    
     task_summary_history_length: NotRequired[int]
+    
+    use_original_tasks: NotRequired[bool]
 
 
 # TODO: 针对不同环境的统一接口，message-in message-out？那可能不需要这个
@@ -81,6 +86,10 @@ class TaskManager(object):
         self._exploration_llm_top_k = kwargs.get("exploration_llm_top_k", 1)
         self._task_summary_history_length = kwargs.get("task_summary_history_length", self._max_explore_step)
 
+        # 混合原有数据和生成数据
+        # TODO: a better mixture strategy is possible
+        self._use_original_tasks = kwargs.get("use_original_tasks", 0.0)
+
         self._filters: list[TaskPostFilter] = []
 
     def register_filter(self, filter: TaskPostFilter):
@@ -106,6 +115,8 @@ class TaskManager(object):
         if filepath is not None and os.path.exists(filepath):
             dataset.load_from_file(filepath)
         else:
+            # FIXME: debug
+            raise ValueError("filepath does not exist")
             dataset.reload()
             if filepath is not None:
                 dataset.save_to_file(filepath)
@@ -116,6 +127,11 @@ class TaskManager(object):
     def generate_task(self, tasks: Sequence[Task],*,show_progress=False) -> list[TaskObjective]:
         task_q = list(copy.copy(tasks)) * self._n
         res = []
+        
+        # mix original task
+        if self._use_original_tasks:
+            res.extend([TaskObjective(task=x,description=str(x.query),ground_truth="[env]",confidence=1.0,reward=None) for x in tasks])
+        
         # 每次最多探索所有不同任务，或者最大线程个任务，防止同批次中生成相同任务
         parallel_num = min(self._num_exploration_threads, len(tasks))
         with ThreadPoolExecutor(max_workers=self._num_exploration_threads) as pool:
@@ -133,6 +149,8 @@ class TaskManager(object):
 
         # post filter
         res = functools.reduce(lambda x, f: f.filter(x), self._filters, res)
+        
+        random.shuffle(res) # shuffle
 
         return res
 

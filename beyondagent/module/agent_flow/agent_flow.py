@@ -7,15 +7,17 @@ from loguru import logger
 from beyondagent.client.em_client import EMClient
 from beyondagent.client.env_client import EnvClient
 from beyondagent.module.agent_flow.base_agent_flow import BaseAgentFlow
+from beyondagent.module.agent_flow.reward_calculator import RewardCalculator
 from beyondagent.schema.trajectory import Trajectory
 from beyondagent.utils.utils import convert_tool_to_user_message
 
 
 class AgentFlow(BaseAgentFlow):
 
-    def __init__(self,enable_context_generator:Optional[bool]=None, **kwargs):
+    def __init__(self,reward_calculator:Optional[RewardCalculator]=None,enable_context_generator:Optional[bool]=None, **kwargs):
         super().__init__(**kwargs)
         # 优先传入的参数
+        self._reward_calculator = reward_calculator
         self._enable_context_generator = enable_context_generator
         # TODO: 重构代码，避免额外的适配
         if self._enable_context_generator==None:
@@ -117,8 +119,10 @@ class AgentFlow(BaseAgentFlow):
 
             if trajectory.is_terminated:
                 break
-        
-        score = env.evaluate(instance_id, params={"sparse": False})
+        if self._reward_calculator is not None:
+            score = self._reward_calculator.calculate_reward(trajectory, env)
+        else:
+            score = env.evaluate(instance_id, params={"sparse": False})
         trajectory.reward.outcome = score
         trajectory.reward.description = "Outcome 1 = success, 0 = failure."
 

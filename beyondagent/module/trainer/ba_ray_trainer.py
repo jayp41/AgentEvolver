@@ -212,7 +212,7 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
             llm_client=self.async_rollout_manager
             raise NotImplementedError()
         else:
-            llm_client=DashScopeClient()
+            llm_client=DashScopeClient(model_name=self.config.task_manager.llm_client)
         self.task_manager=TaskManager(
             config=self.config,
             llm_client=llm_client, # TODO: use policy model
@@ -223,6 +223,7 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
             max_explore_step=self.config.task_manager.max_explore_step,
             num_explore_threads=self.config.task_manager.num_explore_threads,
             n=self.config.task_manager.n,
+            task_summary_history_length=self.config.task_manager.task_summary_history_length,
         )
         train_dataset=self.task_manager.get_or_load_full_dataset(tasks=self._train_tasks,filepath=self.config.task_manager.persistent_filepath,tokenizer=self.tokenizer,config=self.config.data,processor=self.processor)
         train_sampler=self._train_sampler
@@ -633,7 +634,8 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
                             tasks = [Task(
                                         task_id=gen_batch.non_tensor_batch["extras"][i]["task_id"], 
                                         query=gen_batch.non_tensor_batch["raw_prompt"][i],
-                                        env_type=self.config.env_service.env_type
+                                        env_type=self.config.env_service.env_type,
+                                        evaluator='synthetic' if gen_batch.non_tensor_batch['extras'][i]['synthetic'] else 'env',
                                     ) for i in range(len(gen_batch))]
 
                             # TODO enable tracing by jinli 0619

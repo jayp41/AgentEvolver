@@ -58,7 +58,7 @@ def to_rl_dataset(
             "prompt": prompt,
             "reward_model": {"ground_truth": ground_truth, "style": "rule"},
             "uuid": record_uuid,
-            "extras": {"task_id": task.task_id},
+            "extras": {"task_id": task.task_id, "synthetic": task_obj.ground_truth!='[env]'}, # TODO: this is a temporary solution
         }
 
         processed_records.append(record)

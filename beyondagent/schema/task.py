@@ -10,6 +10,8 @@ class Task(BaseModel):
     metadata: dict = Field(default_factory=dict)
 
     query: List | str = Field(default="")
+    
+    evaluator: str = Field(default="env")
 
 
 class TaskObjective(BaseModel):

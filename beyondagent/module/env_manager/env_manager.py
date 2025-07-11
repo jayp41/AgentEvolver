@@ -10,6 +10,7 @@ from omegaconf import DictConfig
 from tensordict import TensorDict
 from torch.nn.utils.rnn import pad_sequence
 from tqdm import tqdm
+from beyondagent.module.task_manager.reward import LlmAsJudgeRewardCalculator
 from verl import DataProto
 from verl.utils.model import compute_position_id_with_mask
 from verl.utils.torch_functional import (pad_sequence_to_length)
@@ -91,10 +92,13 @@ class ParallelEnvManager(object):
             sampling_params["top_p"] = self.rollout_config.val_kwargs.top_p
 
         llm_chat_fn = self.get_llm_chat_fn(sampling_params)
-        agent_flow: BaseAgentFlow = AgentFlow(llm_chat_fn=llm_chat_fn, 
-                                              tokenizer=self.tokenizer, 
-                                              config=self.config,
-                                              **kwargs)
+        agent_flow: BaseAgentFlow = AgentFlow(
+            reward_calculator=LlmAsJudgeRewardCalculator() if task.evaluator=='synthetic' else None, # TODO: better calculator injection
+            llm_chat_fn=llm_chat_fn, 
+            tokenizer=self.tokenizer, 
+            config=self.config,
+            **kwargs
+        )
 
         # FIXME pass env_type & task_id
         env_worker = EnvWorker(env_type=task.env_type, task_id=task.task_id, thread_index=thread_index,

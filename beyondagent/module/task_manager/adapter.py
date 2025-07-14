@@ -20,7 +20,7 @@ def convert_to_tasks(dataset:RLHFDataset,env_type:str)->list[Task]:
         task = Task(
             task_id=record["extras"]["task_id"],
             env_type=env_type,
-            query=record["raw_prompt"],
+            query=record["raw_prompt"][-1]["content"], # 取出原始 prompt
         )
         res.append(task)
     
@@ -39,12 +39,15 @@ def to_rl_dataset(
 
         # 处理 query 字段
         query = task.query
-        if isinstance(query, list):
-            query_str = "\n".join(str(x) for x in query)
+        # 如果已经是 message，直接使用
+        if isinstance(query, list) and 'content' in query[0]:
+            prompt=query
         else:
-            query_str = str(query)
-
-        prompt = [{"content": query_str, "role": "user"}]
+            if isinstance(query, list):
+                query_str = "\n".join(str(x) for x in query)
+            else:
+                query_str = str(query)
+            prompt = [{"content": query_str, "role": "user"}]
 
         # 构建 reward_model
         ground_truth = [task_obj.ground_truth] if task_obj.ground_truth else []

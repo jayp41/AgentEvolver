@@ -9,7 +9,7 @@ from beyondagent.client.env_client import EnvClient
 from beyondagent.module.agent_flow.base_agent_flow import BaseAgentFlow
 from beyondagent.module.agent_flow.reward_calculator import RewardCalculator
 from beyondagent.schema.trajectory import Trajectory
-from beyondagent.utils.utils import convert_tool_to_user_message
+from beyondagent.utils.utils import convert_tool_to_user_message, clip_state_content_correctly
 
 
 class AgentFlow(BaseAgentFlow):
@@ -102,11 +102,12 @@ class AgentFlow(BaseAgentFlow):
                 env_output["state"] = convert_tool_to_user_message(env_output["state"], format="qwen")
             
             state_content: str = env_output["state"]["content"]
-            # TODO(cc): 不知道在干嘛，tokenize 之后的长度也和之前的长度没关系啊？总之我先去掉了
-            # if len(self.tokenizer(state_content, return_tensors="pt", padding=False)["input_ids"][
-            #            0]) > self.max_env_len:
-            #     env_output["state"]["content"] = state_content[:self.max_env_len]
-            env_output["state"]["content"] = state_content[:self.max_env_len]
+            
+            env_output["state"]["content"] = clip_state_content_correctly(
+                self.tokenizer, 
+                state_content,
+                self.max_env_len
+            )
             
 
             trajectory.steps.append(sanitize_env_state(env_output['state']))

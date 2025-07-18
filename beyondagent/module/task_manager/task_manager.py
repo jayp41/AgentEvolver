@@ -28,6 +28,7 @@ from beyondagent.module.agent_flow.agent_flow import AgentFlow
 from beyondagent.module.agent_flow.base_agent_flow import BaseAgentFlow
 from beyondagent.module.task_manager import adapter
 from beyondagent.module.task_manager.adapter import OnflyRlDataset, to_rl_dataset
+from beyondagent.module.task_manager.data_mixture import MixtureStrategy, OriginalOnlyStrategy
 from beyondagent.module.task_manager.explorer import Explorer
 from beyondagent.module.task_manager.filters import TaskPostFilter
 from beyondagent.module.task_manager.prompts.prompt_explore import (
@@ -53,13 +54,9 @@ class TaskManagerProps(TypedDict):
     exploration_llm_top_k: NotRequired[int]
     
     task_summary_history_length: NotRequired[int]
-    
-    mix_original_tasks: NotRequired[bool]
 
 
-# TODO: 针对不同环境的统一接口，message-in message-out？那可能不需要这个
 # TODO: 能够替换的 exploration & extraction (summary) strategy
-
 
 class TaskManager(object):
 
@@ -68,6 +65,7 @@ class TaskManager(object):
         config: DictConfig,
         llm_client: LlmClient,
         old_retrival: TaskObjectiveRetrieval,
+        mixture_strategy: MixtureStrategy,
         tokenizer,
         env_service_url: str,
         **kwargs: Unpack[TaskManagerProps],
@@ -75,6 +73,7 @@ class TaskManager(object):
         self._config = config
         self._llm_client = llm_client
         self._old_retrival = old_retrival
+        self._mixture_strategy = mixture_strategy
         self._env_service_url = env_service_url
         self._tokenizer = tokenizer  # cc: 这玩意似乎不该在这
         self._max_llm_retries = kwargs["max_llm_retries"] or 3
@@ -88,10 +87,6 @@ class TaskManager(object):
         self._exploration_llm_top_p = kwargs.get("exploration_llm_top_p", 1.0)
         self._exploration_llm_top_k = kwargs.get("exploration_llm_top_k", 1)
         self._task_summary_history_length = kwargs.get("task_summary_history_length", self._max_explore_step)
-
-        # 混合原有数据和生成数据
-        # TODO: a better mixture strategy is possible
-        self._mix_original_tasks = kwargs.get("mix_original_tasks", False)
 
         self._filters: list[TaskPostFilter] = []
         
@@ -111,11 +106,16 @@ class TaskManager(object):
         assert all([x.query is None for x in self._tasks]), "query of seed task must be empty"
         logger.info(f"loaded tasks from dataset, #tasks={len(self._tasks)}")
     
-    def load_tasks_from_environment(self, env: EnvClient, *, env_type: str, split: str, params: Optional[dict] = None):        
-        response = env.get_env_profile(env_type, split, params)
-        self._tasks.extend([Task(task_id=str(x),env_type=env_type,evaluator='env') for x in response])
-        assert all([x.query is None for x in self._tasks]), "query of seed task must be empty"
-        logger.info(f"loaded tasks from environment, #tasks={len(self._tasks)}")
+    def load_tasks_from_environment(self, env: EnvClient, *, env_type: str, split: str, params: Optional[dict] = None):
+        try:
+            response = env.get_env_profile(env_type, split, params)
+            self._tasks.extend([Task(task_id=str(x),env_type=env_type,evaluator='env') for x in response])
+            assert all([x.query is None for x in self._tasks]), "query of seed task must be empty"
+            logger.info(f"loaded tasks from environment, #tasks={len(self._tasks)}")
+        except:
+            logger.error(f"failed to load tasks from environment")
+            return 0
+        return len(response)
 
     def register_filter(self, filter: TaskPostFilter):
         self._filters.append(filter)
@@ -130,13 +130,16 @@ class TaskManager(object):
             tokenizer: transformers.tokenization_utils.PreTrainedTokenizer
             config: DictConfig. Only for RLHFDataset.
         """
-
-        return AutoReloadDataset(self,iter(self._tasks),bs,self._mix_original_tasks,tokenizer=tokenizer,config=config,processor=processor)
+        # autoreloaddataset 没适配 mixture
+        raise NotImplementedError("get_onthefly_dataset is not implemented")
+        # return AutoReloadDataset(self,iter(self._tasks),bs,self._mix_original_tasks,tokenizer=tokenizer,config=config,processor=processor)
     
     def get_or_load_full_dataset(self,filepath:Optional[str],*,config,tokenizer,processor)->"FullDataset":
         """Get the full dataset, or load from file.
-        """     
-        dataset=FullDataset(self,self._tasks,self._mix_original_tasks,tokenizer=tokenizer,config=config,processor=processor)
+        """
+        seed_tasks=[TaskObjective(task=task,ground_truth='[env]',confidence=1.0,reward=None) for task in self._tasks]
+        dataset=FullDataset(self,seed_tasks,self._mixture_strategy,tokenizer=tokenizer,config=config,processor=processor)
+        
         if filepath is not None and os.path.exists(filepath):
             logger.info(f"loading full dataset from {filepath}")
             dataset.load_from_file(filepath)
@@ -147,11 +150,13 @@ class TaskManager(object):
         
         return dataset
     
-    def debug_get_original_seed_dataset(self,*,tokenizer,config,processor)->Dataset:
-        """THIS IS A DEBUG FUNCTION, WILL BE REMOVED IN FUTURE.
+    def get_original_dataset(self,*,tokenizer,config,processor)->"FullDataset":
+        """Get the original dataset.
         """
-        logger.info(f"getting original seed dataset, #={len(self._tasks)}")
-        return OriginalDataset(self._tasks,tokenizer=tokenizer,config=config,processor=processor)
+        seed_tasks=[TaskObjective(task=task,ground_truth='[env]',confidence=1.0,reward=None) for task in self._tasks]
+        dataset = FullDataset(self,seed_tasks,OriginalOnlyStrategy(),tokenizer=tokenizer,config=config,processor=processor)
+        dataset.load_from_file('[unknown]')
+        return dataset
     
     
     def generate_task(self, tasks: Sequence[Task],*,show_progress=False) -> list[TaskObjective]:
@@ -288,72 +293,107 @@ class TaskManager(object):
         return llm_chat
 
 
-class OriginalDataset(Dataset):
-    def __init__(self,tasks:Sequence[Task],*,tokenizer,config, processor):
-        self._tasks=list(tasks)
-        self._tokenizer = tokenizer
-        self._config=config
-        self._processor=processor
-    
-        self._objectives=[TaskObjective(task=x,ground_truth="[env]",confidence=1.0,reward=None) for x in self._tasks]
-        logger.info("used original tasks")
-
-        self._dataset = to_rl_dataset(self._objectives, self._tokenizer, self._config,self._processor)
-        
-        logger.warning(f"loaded original dataset: #task={len(self._tasks)} #rlhf={len(self._dataset)}")
-    
-    
-    def __getitem__(self, index):
-        return self._dataset[index]
-    
-    def __len__(self):
-        return len(self._dataset)
-
-
 class FullDataset(Dataset):
+    """FullDataset with MixtureStrategy support"""
     
-    """FullDataset
-    """
-    
-    def __init__(self,manager:TaskManager, tasks:Sequence[Task],mix_origins:bool=False,*,tokenizer,config, processor):
-        self._manager=manager
-        self._tasks=list(tasks)
-        self._mix_origins=mix_origins
+    def __init__(self, 
+                 manager: TaskManager, 
+                 tasks: Sequence[TaskObjective],
+                 mixture_strategy: MixtureStrategy,
+                 *, 
+                 tokenizer, 
+                 config, 
+                 processor):
+        """
+        Args:
+            manager: TaskManager实例
+            tasks: 原始任务列表
+            mixture_strategy: 数据混合策略，如果为None则使用默认的NoMixtureStrategy
+            tokenizer: tokenizer
+            config: 配置
+            processor: processor
+        """
+        self._manager = manager
+        self._tasks = list(tasks)
+        self._mixture_strategy = mixture_strategy
         self._tokenizer = tokenizer
-        self._config=config
-        self._processor=processor
+        self._config = config
+        self._processor = processor
+        self._objectives = []
+        self._dataset = None
     
-    def save_to_file(self,filepath:str):
-        with open(filepath,"w") as f:
-            f.writelines([ob.json()+"\n" for ob in self._objectives])
+    def set_mixture_strategy(self, strategy: MixtureStrategy):
+        """设置新的混合策略"""
+        self._mixture_strategy = strategy
+        logger.info(f"mixture strategy updated to: {type(strategy).__name__}")
     
-    def load_from_file(self,filepath:str):
-        with open(filepath,"r") as f:
-            self._objectives=[TaskObjective.parse_raw(line) for line in filter(lambda x: x.strip()!="", f.readlines())]
-        # mix
-        if self._mix_origins:
-            self._objectives.extend([TaskObjective(task=x,ground_truth="[env]",confidence=1.0,reward=None) for x in self._tasks])
-            logger.info("mixed original tasks in fulldataset")
-        random.shuffle(self._objectives)
-
-        self._dataset = to_rl_dataset(self._objectives, self._tokenizer, self._config,self._processor)
-        logger.info(f"loaded dataset, #dataset={len(self._dataset)}")
+    def save_to_file(self, filepath: str):
+        """保存objectives到文件"""
+        with open(filepath, "w") as f:
+            f.writelines([ob.json() + "\n" for ob in self._objectives])
+        logger.info(f"Saved {len(self._objectives)} objectives to {filepath}")
+    
+    def load_from_file(self, filepath: str):
+        """从文件加载objectives"""
+        if os.path.exists(filepath):
+            with open(filepath, "r") as f:
+                synthetic_objectives = [
+                    TaskObjective.parse_raw(line) 
+                    for line in filter(lambda x: x.strip() != "", f.readlines())
+                ]
+        else:
+            logger.warning(f"failed to load objectives from {filepath}, file not found.")
+            synthetic_objectives = []
+        
+        # 使用混合策略处理数据
+        self._objectives = self._mixture_strategy.mix_data(synthetic_objectives, self._tasks)
+        
+        # 转换为RL dataset
+        self._dataset = to_rl_dataset(self._objectives, self._tokenizer, self._config, self._processor)
+        logger.info(f"Loaded and mixed dataset: #objectives={len(self._objectives)}, #rlhf={len(self._dataset)}")
     
     def reload(self):
-        self._objectives=self._manager.generate_task(self._tasks,show_progress=True)
-        # mix
-        if self._mix_origins:
-            self._objectives.extend([TaskObjective(task=x,ground_truth="[env]",confidence=1.0,reward=None) for x in self._tasks])
-            logger.info("mixed original tasks")
-        random.shuffle(self._objectives)
-        self._dataset = to_rl_dataset(self._objectives, self._tokenizer, self._config,self._processor)
+        """重新生成数据"""
+        # 生成合成数据
+        synthetic_objectives = self._manager.generate_task([x.task for x in self._tasks], show_progress=True)
         
-        logger.info(f"reloaded dataset, #dataset={len(self._dataset)}")
+        # 使用混合策略处理数据
+        self._objectives = self._mixture_strategy.mix_data(synthetic_objectives, self._tasks)
+        
+        # 转换为RL dataset
+        self._dataset = to_rl_dataset(self._objectives, self._tokenizer, self._config, self._processor)
+        logger.info(f"Reloaded and mixed dataset: #objectives={len(self._objectives)}, #rlhf={len(self._dataset)}")
+    
+    def get_statistics(self) -> dict:
+        """获取数据集统计信息"""
+        if not self._objectives:
+            return {
+                "total": 0, 
+                "synthetic": 0, 
+                "original": 0,
+                "synthetic_ratio": 0.0,
+                "strategy_info": str(self._mixture_strategy)
+            }
+        
+        synthetic_count = sum(1 for obj in self._objectives if obj.task.evaluator != "env")
+        original_count = len(self._objectives) - synthetic_count
+        
+        return {
+            "total": len(self._objectives),
+            "synthetic": synthetic_count,
+            "original": original_count,
+            "synthetic_ratio": synthetic_count / len(self._objectives) if len(self._objectives) > 0 else 0,
+            "strategy_info": str(self._mixture_strategy)
+        }
     
     def __getitem__(self, index):
+        if self._dataset is None:
+            raise RuntimeError("Dataset not loaded. Call reload() or load_from_file() first.")
         return self._dataset[index]
     
     def __len__(self):
+        if self._dataset is None:
+            return 0
         return len(self._dataset)
 
 

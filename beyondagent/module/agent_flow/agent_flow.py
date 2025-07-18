@@ -47,7 +47,7 @@ class AgentFlow(BaseAgentFlow):
         for act_step in range(self.max_steps):
             # if use qwen3, add /no_think
             if self.config.actor_rollout_ref.rollout.use_qwen3:
-                trajectory.steps[-1]["content"] += " /no_think"
+                trajectory.steps[-1]["content"] = " /no_think     "+trajectory.steps[-1]["content"]
 
             prompt_text = self.tokenizer.apply_chat_template(trajectory.steps, 
                                                              tokenize=False,
@@ -101,6 +101,7 @@ class AgentFlow(BaseAgentFlow):
             # breakpoint()
             
             # useless: for tool role
+            assert len(env_messages)>0, "env returns empty messages"
             for env_message in env_messages:
                 if env_message["role"] == "tool":
                     env_message = cast(dict, convert_tool_to_user_message(env_message, format="qwen"))

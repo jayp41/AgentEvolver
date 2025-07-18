@@ -327,14 +327,14 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
             assert isinstance(val_seed_dataset,RLHFDataset), "train_dataset must be RLHFDataset"
             self.val_task_manager.load_tasks_from_dataset(val_seed_dataset,env_type=self.config.env_service.env_type)
         else:
-            self.val_task_manager.load_tasks_from_environment(env_client,env_type=self.config.env_service.env_type,split="val")
+            for split in ['val','dev']:
+                if self.val_task_manager.load_tasks_from_environment(env_client,env_type=self.config.env_service.env_type,split=split)>0:
+                    break
         
-        if self.config.task_manager.debug_use_original_tasks:
-            self.train_dataset=self.train_task_manager.debug_get_original_seed_dataset(tokenizer=self.tokenizer,config=self.config.data,processor=self.processor)
-        else:
-            self.train_dataset=self.train_task_manager.get_or_load_full_dataset(filepath=self.config.task_manager.train_data_path,tokenizer=self.tokenizer,config=self.config.data,processor=self.processor)
-        self.val_dataset=self.val_task_manager.debug_get_original_seed_dataset(tokenizer=self.tokenizer,config=self.config.data,processor=self.processor)
-            
+        self.train_dataset=self.train_task_manager.get_or_load_full_dataset(filepath=self.config.task_manager.train_data_path,tokenizer=self.tokenizer,config=self.config.data,processor=self.processor)
+        # although limiting dataset to only the original is possibile with strategy, we want to avoid the rollout process on val data.
+        self.val_dataset=self.val_task_manager.get_original_dataset(tokenizer=self.tokenizer,config=self.config.data,processor=self.processor)
+        
         assert not isinstance(self.train_dataset,AutoReloadDataset), "please disable multiple workers for AutoReloadDataset"
         assert not isinstance(self.val_dataset,AutoReloadDataset), "please disable multiple workers for AutoReloadDataset"
         self.train_dataloader = StatefulDataLoader(
@@ -623,7 +623,7 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
             assert len(lst) == 0 or len(lst) == len(sample_scores), f"{key_info}: {len(lst)=}, {len(sample_scores)=}"
 
         data_sources = np.concatenate(data_source_lst, axis=0)
-
+        
         data_src2var2metric2val = process_validation_metrics(data_sources, sample_inputs, reward_extra_infos_dict)
         metric_dict = {}
         for data_source, var2metric2val in data_src2var2metric2val.items():

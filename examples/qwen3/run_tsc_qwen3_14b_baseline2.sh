@@ -68,13 +68,13 @@ python3 -m beyondagent.main_ppo \
     algorithm.use_kl_in_reward=False \
     trainer.n_gpus_per_node=8 \
     trainer.critic_warmup=0 \
-    trainer.logger=['console','swanlab'] \
+    trainer.logger="['console','swanlab']" \
     trainer.project_name='beyondagent' \
     trainer.experiment_name="qwen3_14b_sparse_baseline2" \
     trainer.nnodes=1 \
-    trainer.save_freq=-1 \
+    trainer.save_freq=20 \
     trainer.test_freq=20 \
-    trainer.total_epochs=20 \
+    trainer.total_epochs=60 \
     trainer.val_before_train=True \
     trainer.validation_data_dir="experiments/exp_sparse_baseline2_${current_time}/validation_log" \
     trainer.rollout_data_dir="experiments/exp_sparse_baseline2_${current_time}/rollout_log" \

@@ -24,9 +24,9 @@ python3 -m beyondagent.main_ppo \
     semantic_advantage.evaluation_type='api' \
     semantic_advantage.mask_type='response_mask' \
     semantic_advantage.mode='semantic' \
-    semantic_advantage.good_scale=1.0 \
-    semantic_advantage.bad_scale=0.2 \
-    semantic_advantage.neg_bad_scale=-0.2 \
+    semantic_advantage.consistent_scale=1.0 \
+    semantic_advantage.pos_unconsistent_scale=0.2 \
+    semantic_advantage.neg_unconsistent_scale=-0.2 \
     semantic_advantage.api_max_retries=200 \
     semantic_advantage.concurrent=5 \
     semantic_advantage.model='qwen-turbo' \

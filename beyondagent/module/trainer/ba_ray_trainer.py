@@ -717,9 +717,9 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
                         # apply_step_mask(
                         #     batch        = batch,
                         #     step_flags   = step_flags,
-                        #     good_scale   = semantic_config.good_scale,
-                        #     bad_scale    = semantic_config.bad_scale,
-                        #     neg_bad_scale = semantic_config.neg_bad_scale,
+                        #     consistent_scale   = semantic_config.consistent_scale,
+                        #     pos_unconsistent_scale    = semantic_config.pos_unconsistent_scale,
+                        #     neg_unconsistent_scale = semantic_config.neg_unconsistent_scale,
                         # )                  # breakpoint()
                         # print("$$$$$$$$$$$$$$$$$$$$ ")
                         
@@ -796,9 +796,9 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
                             semantic_stats = self._semantic_processor.process_batch_sync(
                                 tokenizer=self.tokenizer,
                                 batch=batch,
-                                good_scale=semantic_config.good_scale,
-                                bad_scale=semantic_config.bad_scale,
-                                neg_bad_scale=semantic_config.neg_bad_scale,
+                                consistent_scale=semantic_config.consistent_scale,
+                                pos_unconsistent_scale=semantic_config.pos_unconsistent_scale,
+                                neg_unconsistent_scale=semantic_config.neg_unconsistent_scale,
                                 mask_tensor=selected_mask, 
                             )
 

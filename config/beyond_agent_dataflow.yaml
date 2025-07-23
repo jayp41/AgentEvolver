@@ -61,9 +61,9 @@ semantic_advantage:
   evaluation_type: "local"           # 🔥 新增：评估类型 ("local" 或 "api")
   mask_type: "loss_mask"          # mask类型
   mode: "semantic"                 # 模式
-  good_scale: 1.0                  # 好步骤缩放因子
-  bad_scale: 0.2                   # 坏步骤缩放因子
-  neg_bad_scale: -0.2              # 负面坏步骤缩放因子
+  consistent_scale: 1.0                  # 好步骤缩放因子
+  pos_unconsistent_scale: 0.2                   # 坏步骤缩放因子
+  neg_unconsistent_scale: -0.2              # 负面坏步骤缩放因子
   concurrent: 20                   # 并发处理数量
   model: "qwen-max"              # 语义评估使用的模型
   api_max_retries: 200             # API调用最大重试次数，默认200次

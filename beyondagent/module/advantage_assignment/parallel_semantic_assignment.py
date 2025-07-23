@@ -582,9 +582,9 @@ def _apply_fallback_strategy_parallel(batch) -> List[List[bool]]:
 
 def apply_step_mask_vectorized(batch,
                              step_flags: List[List[bool]],
-                             good_scale: float = 1.0,
-                             bad_scale: float = 0.2,
-                             neg_bad_scale: float = -0.2,
+                             consistent_scale: float = 1.0,
+                             pos_unconsistent_scale: float = 0.2,
+                             neg_unconsistent_scale: float = -0.2,
                              mask_tensor: torch.Tensor = None) -> Dict:
     """
     向量化版本的step mask应用，避免嵌套循环
@@ -593,7 +593,7 @@ def apply_step_mask_vectorized(batch,
     Args:
         batch: 批次数据
         step_flags: step评估结果
-        good_scale, bad_scale, neg_bad_scale: 缩放因子
+        consistent_scale, pos_unconsistent_scale, neg_unconsistent_scale: 缩放因子
         mask_tensor: 外部传入的mask tensor，shape (bs, resp_len)
                     可以是loss_mask或response_mask，如果为None则使用默认的loss_mask
     
@@ -688,9 +688,9 @@ def apply_step_mask_vectorized(batch,
             
             # 根据overall_pos和is_good确定scale factor
             if sample_overall_pos:
-                factor = good_scale if is_good else bad_scale
+                factor = consistent_scale if is_good else pos_unconsistent_scale
             else:
-                factor = neg_bad_scale if is_good else good_scale
+                factor = neg_unconsistent_scale if is_good else consistent_scale
             
             # 应用scale factor
             scale[b].masked_fill_(step_mask, factor)
@@ -784,9 +784,9 @@ def evaluate_step_flags(tokenizer,
 
 def apply_step_mask(batch,
                    step_flags: List[List[bool]],
-                   good_scale: float = 1.0,
-                   bad_scale: float = 0.2,
-                   neg_bad_scale: float = -0.2,
+                   consistent_scale: float = 1.0,
+                   pos_unconsistent_scale: float = 0.2,
+                   neg_unconsistent_scale: float = -0.2,
                    use_vectorized: bool = True,
                    mask_tensor: torch.Tensor = None):
     """
@@ -795,7 +795,7 @@ def apply_step_mask(batch,
     Args:
         batch: 批次数据
         step_flags: step评估结果
-        good_scale, bad_scale, neg_bad_scale: 缩放因子
+        consistent_scale, pos_unconsistent_scale, neg_unconsistent_scale: 缩放因子
         use_vectorized: 是否使用向量化版本
         mask_tensor: 外部传入的mask tensor
     """
@@ -803,9 +803,9 @@ def apply_step_mask(batch,
         stats = apply_step_mask_vectorized(
             batch=batch,
             step_flags=step_flags,
-            good_scale=good_scale,
-            bad_scale=bad_scale,
-            neg_bad_scale=neg_bad_scale,
+            consistent_scale=consistent_scale,
+            pos_unconsistent_scale=pos_unconsistent_scale,
+            neg_unconsistent_scale=neg_unconsistent_scale,
             mask_tensor=mask_tensor  # 传入外部mask
         )
         return stats
@@ -847,9 +847,9 @@ class ParallelSemanticProcessor:
         print(f"[ParallelSemanticProcessor] Settings: model={model_name}, concurrent={self.max_concurrent}, batch_limit={self.batch_size_limit}, api_retries={self.api_max_retries}")
         
     async def process_batch(self, tokenizer, batch, 
-                          good_scale: float = 1.0,
-                          bad_scale: float = 0.2,
-                          neg_bad_scale: float = -0.2,
+                          consistent_scale: float = 1.0,
+                          pos_unconsistent_scale: float = 0.2,
+                          neg_unconsistent_scale: float = -0.2,
                           mask_tensor: torch.Tensor = None) -> Dict:
         """
         处理整个batch的语义评估和mask应用
@@ -858,7 +858,7 @@ class ParallelSemanticProcessor:
         Args:
             tokenizer: 分词器
             batch: 批次数据
-            good_scale, bad_scale, neg_bad_scale: 缩放因子
+            consistent_scale, pos_unconsistent_scale, neg_unconsistent_scale: 缩放因子
             mask_tensor: 外部传入的mask tensor，shape (bs, resp_len)
                         可以是loss_mask或response_mask
         
@@ -893,9 +893,9 @@ class ParallelSemanticProcessor:
         mask_stats = apply_step_mask_vectorized(
             batch=batch,
             step_flags=step_flags,
-            good_scale=good_scale,
-            bad_scale=bad_scale,
-            neg_bad_scale=neg_bad_scale,
+            consistent_scale=consistent_scale,
+            pos_unconsistent_scale=pos_unconsistent_scale,
+            neg_unconsistent_scale=neg_unconsistent_scale,
             mask_tensor=mask_tensor  # 传入外部mask
         )
         

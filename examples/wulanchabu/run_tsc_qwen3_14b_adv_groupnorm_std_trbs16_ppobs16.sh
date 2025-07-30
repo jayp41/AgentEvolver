@@ -47,6 +47,7 @@ python -m beyondagent.main_ppo \
     semantic_advantage.model='qwen-turbo' \
     semantic_advantage.adv_norm.enable=true \
     semantic_advantage.adv_norm.level="group" \
+    actor_rollout_ref.rollout.val_kwargs.n=8 \
     env_sparse=true \
     data.train_batch_size=16 \
     data.max_prompt_length=4096 \

@@ -101,16 +101,25 @@ def build_batch_evaluation_prompt(
         "You are an expert *process* reward evaluator.\n\n"
         "The single message you receive always contains three labelled sections:\n"
         "  1. OVERALL ADVANTAGE – a scalar summarising the final answer quality.\n"
-        "  2. TASK DESCRIPTION   – the user’s original request.\n"
+        "  2. TASK DESCRIPTION   – the user's original request.\n"
         "  3. SOLUTION TRAJECTORY – a numbered list of assistant steps.\n\n"
         "Evaluation rule:\n"
         "• If OVERALL ADVANTAGE is **positive (> 0)**, judge each step by whether its ACTION\n"
         "  makes the overall answer *even better* than before (incremental improvement).\n"
-        "• If OVERALL ADVANTAGE is **negative (< 0)**, judge each step by whether it *actively\n"
-        "  corrects the existing error*. Mark GOOD **only** when the ACTION clearly fixes or\n"
-        "  moves the answer towards correctness; otherwise mark BAD.\n\n"
-        "Ignore superficial politeness or formatting. Focus strictly on the technical impact\n"
-        "of the ACTION (and OBSERVATION if present).\n\n"
+        "• If OVERALL ADVANTAGE is **negative (< 0)**, the trajectory contains fundamental errors.\n"
+        "  Mark GOOD **only** when the ACTION:\n"
+        "  - Fixes a technical error AND moves toward the correct final goal, OR\n"
+        "  - Corrects a misunderstanding of the task requirements, OR  \n"
+        "  - Challenges/questions previous incorrect assumptions\n"
+        "  Mark BAD if the ACTION:\n"
+        "  - Continues building on incorrect foundations, OR\n"
+        "  - Makes progress in the wrong direction, OR\n"
+        "  - 'Completes' a fundamentally flawed solution\n\n"
+        "Key principle: When overall advantage is negative, technical competence in the wrong\n"
+        "direction is still BAD. Focus on whether each step moves toward the CORRECT solution\n"
+        "of the ORIGINAL task, not just whether it executes well.\n\n"
+        "Ignore superficial politeness or formatting. Focus strictly on whether the ACTION\n"
+        "brings the solution closer to correctly solving the user's actual request.\n\n"
         "Reply IN THE REQUIRED OUTPUT FORMAT and output nothing else."
     )
 
@@ -148,7 +157,8 @@ def build_batch_evaluation_prompt(
         "---",
         "Evaluation reminder:",
         "• Positive overall advantage → ask: *Does this step further improve the answer?*",
-        "• Negative overall advantage → ask: *Does this step clearly correct the error?*",
+        "• Negative overall advantage → ask: *Does this step move toward correctly solving the ORIGINAL task?*",
+        "  (Technical competence in wrong direction = BAD)",
         "",
         "REQUIRED OUTPUT FORMAT:",
         "Step 0 Analysis: <your reasoning>",
@@ -164,7 +174,6 @@ def build_batch_evaluation_prompt(
         {"role": "system", "content": sys_msg},
         {"role": "user",   "content": "\n".join(user_parts)},
     ]
-
 
 def build_batch_evaluation_prompt_from_rollout(query: str, rollout: str, overall_adv: float, max_step_chars: int = 2000):
     steps = parse_rollout_to_steps(rollout)

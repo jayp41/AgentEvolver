@@ -15,6 +15,8 @@ This is your first time entering this environment. Your mission is to **gain a d
 
 [INSERT_ENVIRONMENT_DESCRIPTION_HERE]
 
+### Use Environment Description
+
 In the exploration, you should fully leverage the environment description if provided:
 - Treat this description as your primary reference and "map" of the environment.
 - Continuously refer back to it when selecting actions — do not just read it once.

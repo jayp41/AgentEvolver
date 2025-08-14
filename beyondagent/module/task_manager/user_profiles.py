@@ -89,15 +89,15 @@ class UserProfile:
         """
         inst_parts = []
 
-        inst_parts.append("## Environment Overview")
+        inst_parts.append("### Environment Overview")
         inst_parts.append(
             f"- **User Name**: {self._name}\n"
             f"- **User Background**: {self._background}"
         )
 
-        inst_parts.append("\n## Entities in the Environment")
+        inst_parts.append("\n### Entities in the Environment")
         for e in self._entities:
-            inst_parts.append(f"### Entity: {e.name}")
+            inst_parts.append(f"#### Entity: {e.name}")
             inst_parts.append(f"- Description: {e.description}")
             inst_parts.append("- Attributes:")
             for attr_name, attr_desc in e.attrs.items():
@@ -107,7 +107,7 @@ class UserProfile:
                 inst_parts.append(f"  - **{opt.name}**: {opt.description}")
             inst_parts.append("")  # blank line for readability
 
-        inst_parts.append("## Task Preferences")
+        inst_parts.append("### Task Preferences")
         inst_parts.append(f"- **Average number of entities involved**: {self._task_preference.num_entities}")
         inst_parts.append(f"- **Average number of operations involved**: {self._task_preference.num_opts}")
         inst_parts.append(f"- **Relation difficulty**: {self._task_preference.relation_difficulty}")

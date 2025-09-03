@@ -125,3 +125,4 @@ semantic_advantage:
     fix_base: 0.2
     alpha: 1.0
     orm_distribution: last_step
+    enable_length_normalization: false   # 新增参数，控制是否进行长度正则化

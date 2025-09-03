@@ -951,6 +951,7 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
                                 fix_base=float(getattr(prm_cfg, "fix_base", 0.2)),
                                 alpha=float(getattr(prm_cfg, "alpha", 1.0)), # 保持 alpha=1.0 以匹配 eb5f2db 的 decouple 行为
                                 orm_distribution=getattr(prm_cfg, "orm_distribution", "last_step" ),  # "all" | "pos" | "neg"
+                                enable_length_normalization=getattr(prm_cfg, "enable_length_normalization", False),
                             )
 
                             scheme = getattr(prm_cfg, "prm_scheme", "allocation_c")

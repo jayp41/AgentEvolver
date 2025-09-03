@@ -22,6 +22,7 @@ class PRMHyper:
     fix_base: float = 0.2                 # fix 方案的基础幅度（good=+base, bad=-base）
     alpha: float = 1.0                   # PRM权重平衡系数
     orm_distribution: str = "last_step"   # ORM分配方式："last_step" 或 "all_steps"
+    enable_length_normalization: bool = False  # 是否启用长度正则化（除以sqrt(K)）
 
 def _ensure_tensor(x, device, dtype=None):
     """确保输入转换为指定设备和类型的张量"""
@@ -376,24 +377,35 @@ from typing import List, Dict
 import torch
 
 def _build_decouple(
-    orm_full_scores: torch.Tensor,  # 完整的ORM分数（你也可以继续传 ±1）
+    orm_full_scores: torch.Tensor,
     step_flags: List[List[bool]],
     step_ids: torch.Tensor,
     group_ids: torch.Tensor,
-    hyper: PRMHyper
+    hyper: "PRMHyper"
 ) -> List[List[float]]:
     """
-    方案4：decouple —— PRM 和 ORM 分别标准化后组合；不强制 ∑=±1。
-    - PRM：基于 flags 构造基础奖励，做组内 z-score 标准化
-    - ORM：使用完整的 ORM 分数（或你传入的 ±1），做组内 z-score 标准化
-    - 组合：alpha * normalized_prm + normalized_orm（按 orm_distribution 方式分配）
-    - 长度正则：对每条轨迹的 combined rewards 再整体除以 sqrt(K)，抑制“越长越肥”
+    方案4：decouple —— PRM 和 ORM 分别标准化后组合
+    
+    Args:
+        enable_length_normalization: 是否启用长度正则化（除以sqrt(K)）
+                                   - True: 对每条轨迹的奖励除以sqrt(轨迹长度)，抑制长轨迹优势
+                                   - False: 不进行长度正则化，保持原始组合奖励
+    
+    核心区别：
+    1. 不进行sqrt: combined_reward 直接使用
+    2. 进行sqrt: combined_reward * (1/sqrt(K))，其中K是轨迹长度
+    
+    影响分析：
+    - 启用sqrt会降低长轨迹的整体奖励幅度，使不同长度轨迹更公平
+    - 不启用sqrt时，长轨迹可能因为累积更多奖励而被过度偏好
     """
+    
     B = step_ids.size(0)
     alpha = hyper.alpha
     orm_distribution = hyper.orm_distribution
+    enable_length_normalization = hyper.enable_length_normalization # 新增参数控制是否进行sqrt长度正则化
 
-    # ---- 1) 构造基础 PRM 奖励（与 ORM 无关）----
+    # ---- 1. 构造基础 PRM 奖励 ----
     prm_rewards_raw: List[List[float]] = []
     for i in range(B):
         K = _num_steps_from_step_ids(step_ids[i])
@@ -404,20 +416,20 @@ def _build_decouple(
         prm_rewards = [hyper.fix_base if f else -hyper.fix_base for f in flags]
         prm_rewards_raw.append(prm_rewards)
 
-    # ---- 2) 对 PRM 奖励做组内 z-score 标准化 ----
+    # ---- 2. 对 PRM 奖励做组内 z-score 标准化 ----
     prm_rewards_std = _group_zscore_on_steps(prm_rewards_raw, group_ids, hyper)
-
-    # ---- 3) 对 ORM 分数做组内标准化（z-score）----
+    
+    # ---- 3. 对 ORM 分数做组内标准化 ----
     orm_scores = orm_full_scores.cpu().tolist()
     gids = group_ids.view(-1).tolist()
     g2idx: Dict[int, List[int]] = {}
     for i, g in enumerate(gids):
         g2idx.setdefault(int(g), []).append(i)
-
+    
     orm_scores_std = [0.0] * B
     for _, idxs in g2idx.items():
         group_orms = [orm_scores[i] for i in idxs]
-        if not group_orms:
+        if len(group_orms) == 0:
             continue
         orm_tensor = torch.tensor(group_orms, dtype=torch.float32)
         orm_mean = orm_tensor.mean()
@@ -426,11 +438,10 @@ def _build_decouple(
             for i in idxs:
                 orm_scores_std[i] = float(orm_scores[i] - orm_mean.item())
         else:
-            denom = float(orm_std.item() + 1e-12)
             for i in idxs:
-                orm_scores_std[i] = float((orm_scores[i] - orm_mean.item()) / denom)
-
-    # ---- 4) 组合 + 5) 轨迹长度正则（除以 sqrt(K)）----
+                orm_scores_std[i] = float((orm_scores[i] - orm_mean.item()) / (orm_std.item() + 1e-12))
+    
+    # ---- 4. 组合标准化的 PRM 和 ORM ----
     combined_rewards: List[List[float]] = []
     for i in range(B):
         if not prm_rewards_std[i]:
@@ -440,25 +451,33 @@ def _build_decouple(
         prm_std = prm_rewards_std[i]
         orm_std = orm_scores_std[i]
         K = len(prm_std)
-        length_scale = 1.0 / math.sqrt(max(K, 1))
 
+        # 🔥 关键区别：是否计算长度正则化因子
+        if enable_length_normalization:
+            length_scale = 1.0 / math.sqrt(max(K, 1))
+            print(f"轨迹 {i}: 长度={K}, 长度缩放因子=1/sqrt({K})={length_scale:.4f}")
+        else:
+            length_scale = 1.0
+            print(f"轨迹 {i}: 长度={K}, 无长度正则化 (缩放因子=1.0)")
+        
         combined = []
-        if orm_distribution == "last_step":
-            for j, prm_reward in enumerate(prm_std):
-                if j == K - 1:
+        for j, prm_reward in enumerate(prm_std):
+            if orm_distribution == "last_step":
+                if j == len(prm_std) - 1:
                     combined_reward = alpha * prm_reward + orm_std
                 else:
                     combined_reward = alpha * prm_reward
-                combined.append(float(combined_reward * length_scale))
-        elif orm_distribution == "all_steps":
-            for prm_reward in prm_std:
+            elif orm_distribution == "all_steps":
                 combined_reward = alpha * prm_reward + orm_std
-                combined.append(float(combined_reward * length_scale))
-        else:
-            raise ValueError(f"Unknown orm_distribution: {orm_distribution}")
-
+            else:
+                raise ValueError(f"Unknown orm_distribution: {orm_distribution}")
+            
+            # 🔥 关键区别：应用长度正则化
+            final_reward = combined_reward * length_scale
+            combined.append(float(final_reward))
+        
         combined_rewards.append(combined)
-
+    
     return combined_rewards
 
 # =========================

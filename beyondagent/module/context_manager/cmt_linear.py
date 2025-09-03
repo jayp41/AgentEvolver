@@ -449,8 +449,8 @@ class Linear_CMT(Trajectory, ContextManagerBase):
 
         # ANNI experience extraction and discard
         if self.task_train_exp_mode == "discard":
-            from vsdb import bp
-            bp('X1')
+            # from vsdb import bp
+            # bp('X1')
             # "\n\nSome Related Experience to help you to complete the task:<EXP>{}</EXP>"
             self.experience_template = self.config.hybrid_experience_training.experience_template
             for i, ext_msg in enumerate(ext_steps):

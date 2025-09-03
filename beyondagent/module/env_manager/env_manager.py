@@ -163,32 +163,43 @@ class ParallelEnvManager(object):
         """
         Process a single prompt in a thread-safe way.
         """
+        max_retry = 4
+        for retry in range(max_retry):
+            try:
 
-        # TODO add try exception
-        sampling_params = dict(
-            n=1,
-            max_completion_tokens=self.rollout_config.response_length,
-            temperature=self.rollout_config.temperature,
-            top_p=self.rollout_config.top_p)
+                # TODO add try exception
+                sampling_params = dict(
+                    n=1,
+                    max_completion_tokens=self.rollout_config.response_length,
+                    temperature=self.rollout_config.temperature,
+                    top_p=self.rollout_config.top_p)
 
-        if mode == "validate":
-            sampling_params["temperature"] = self.rollout_config.val_kwargs.temperature
-            sampling_params["top_k"] = self.rollout_config.val_kwargs.top_k
-            sampling_params["top_p"] = self.rollout_config.val_kwargs.top_p
+                if mode == "validate":
+                    sampling_params["temperature"] = self.rollout_config.val_kwargs.temperature
+                    sampling_params["top_k"] = self.rollout_config.val_kwargs.top_k
+                    sampling_params["top_p"] = self.rollout_config.val_kwargs.top_p
 
-        llm_chat_fn = self.get_llm_chat_fn(sampling_params)
-        agent_flow: BaseAgentFlow = AgentFlow(
-            reward_calculator=LlmAsJudgeRewardCalculator() if task.evaluator=='synthetic' else None, # TODO: better calculator injection
-            llm_chat_fn=llm_chat_fn,
-            tokenizer=self.tokenizer,
-            config=self.config,
-            **kwargs
-        )
+                llm_chat_fn = self.get_llm_chat_fn(sampling_params)
+                agent_flow: BaseAgentFlow = AgentFlow(
+                    reward_calculator=LlmAsJudgeRewardCalculator() if task.evaluator=='synthetic' else None, # TODO: better calculator injection
+                    llm_chat_fn=llm_chat_fn,
+                    tokenizer=self.tokenizer,
+                    config=self.config,
+                    **kwargs
+                )
 
-        env_worker = EnvWorker(task=task, thread_index=thread_index, config=self.config, tokenizer=self.tokenizer)
-        trajectory: Trajectory = env_worker.execute(data_id=data_id, rollout_id=rollout_id, add_exp=add_exp, task_train_exp_mode=task_train_exp_mode, agent_flow=agent_flow, tmux=tmux, stop=stop) # add add_exp & task_train_exp_mode by ANNI
+                env_worker = EnvWorker(task=task, thread_index=thread_index, config=self.config, tokenizer=self.tokenizer)
+                trajectory: Trajectory = env_worker.execute(data_id=data_id, rollout_id=rollout_id, add_exp=add_exp, task_train_exp_mode=task_train_exp_mode, agent_flow=agent_flow, tmux=tmux, stop=stop) # add add_exp & task_train_exp_mode by ANNI
+                return trajectory
 
-        return trajectory
+            except Exception as e:
+                if retry < max_retry - 1:
+                    logger.bind(exception=True).exception(f"rollout_env_worker error: {e.args}, retrying {retry + 1}/{max_retry}")
+                    time.sleep(2 ** retry)
+                else:
+                    logger.bind(exception=True).exception(f"rollout_env_worker failed after {max_retry} retries: {e.args}")
+                    raise e
+
 
     def rollout(self, tasks: List[Task], mode: Literal["sample", "validate"], epoch: str):
         traj_cmt_array = []
@@ -319,6 +330,7 @@ class ParallelEnvManager(object):
         messages = []
         reward_scores = []
         task_ids = []
+        rollout_ids = []
         extras = [] # List of dictionaries containing supplementary data for each trajectory, including "add_exp", "task_train_expmode", "experience"
 
         for sample in samples:
@@ -329,6 +341,7 @@ class ParallelEnvManager(object):
                                 f"{len(sample.position_ids)=}, {len(sample.loss_mask)=}"
 
             task_ids.append(sample.task_id)
+            rollout_ids.append(sample.rollout_id)
             # Discard samples with prompt length exceeding limit
             if len(sample.prompt_ids) > self.config.data.max_prompt_length:
                 raise RuntimeError(f"Sample has prompt_ids length {len(sample.prompt_ids)} ")
@@ -420,4 +433,13 @@ class ParallelEnvManager(object):
             batch_size=len(samples),
         )
 
-        return DataProto(batch=batch, non_tensor_batch={"task_ids": np.array(task_ids), "messages": np.array(messages), "reward_scores": np.array(reward_scores), "extras": np.array(extras)})
+        return DataProto(
+            batch=batch,
+            non_tensor_batch={
+                "task_ids": np.array(task_ids),
+                "rollout_ids": np.array(rollout_ids),
+                "messages": np.array(messages),
+                "reward_scores": np.array(reward_scores),
+                "extras": np.array(extras)
+            }
+        )

@@ -85,7 +85,9 @@ class ExtendedMessage:
 
     @property
     def content_for_future(self):
-        if self._content_for_future == "": raise ValueError("content_for_future is not set, or previous llm output is empty!")
+        if self._content_for_future == "":
+            self._content_for_future = "(Empty Content)"
+            # raise ValueError("content_for_future is not set, or previous llm output is empty!")
         return self._content_for_future
 
 

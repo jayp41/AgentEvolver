@@ -1025,6 +1025,7 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
                         # compute advantages, executed on the driver process
                         norm_adv_by_std_in_grpo = self.config.algorithm.get("norm_adv_by_std_in_grpo", True)  # GRPO adv normalization factor
 
+                        # FIXME: patch situations in which a task can provide multiple samples
                         batch = compute_advantage(
                             batch,
                             adv_estimator=self.config.algorithm.adv_estimator,

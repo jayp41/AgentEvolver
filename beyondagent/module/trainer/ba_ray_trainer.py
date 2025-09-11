@@ -1149,7 +1149,9 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
 
                             metrics.update({
                                 "prm/pos_traj_bad_rate": (pos_bad / max(1, pos_total)),
+                                "prm/pos_traj_good_rate": (pos_good / max(1, pos_total)),
                                 "prm/neg_traj_good_rate": (neg_good / max(1, neg_total)),
+                                "prm/neg_traj_bad_rate": (neg_bad / max(1, neg_total)),
                                 "prm/good_steps_total": float(pos_good + neg_good),
                                 "prm/bad_steps_total": float(pos_bad + neg_bad),
                             })

@@ -74,38 +74,59 @@ def _group_zscore_on_steps(
         g2idx.setdefault(int(g), []).append(i)
 
     step_rewards_std: List[List[float]] = [[] for _ in range(B)]
+    eps = float(hyper.eps)
+
     for _, idxs in g2idx.items():
         if hyper.equal_trajectory_weight:
-            # 1) 组均值：轨迹均值的等权平均
-            traj_means = []
+            # === 轨迹等权：先均值的均值，再均方差的均值 ===
+            n_traj = 0
+            mu_acc = 0.0
             for i in idxs:
                 ri = step_rewards_raw[i]
-                if ri:
-                    traj_means.append(sum(ri) / len(ri))
-            if len(traj_means) == 0:
+                if not ri:
+                    continue
+                n_traj += 1
+                # 轨迹均值累加（等权）
+                mu_acc += (math.fsum(ri) / len(ri))
+            if n_traj == 0:
                 mu_g, sd_g = 0.0, 1.0
             else:
-                mu_g = float(sum(traj_means) / len(traj_means))
-                # 2) 组方差：先对每条轨迹围绕 mu_g 求均方差，再对轨迹等权平均
-                second_moments = []
+                mu_g = mu_acc / n_traj
+                # 组方差 = 轨迹内围绕 mu_g 的均方差，再对轨迹做等权平均
+                second_moments_sum = 0.0
                 for i in idxs:
                     ri = step_rewards_raw[i]
                     if not ri:
                         continue
-                    second_moments.append(sum((x - mu_g) * (x - mu_g) for x in ri) / len(ri))
-                var_g = float(sum(second_moments) / len(second_moments)) if second_moments else 0.0
-                sd_g = float(math.sqrt(var_g + hyper.eps))
+                    second_moments_sum += (math.fsum((x - mu_g) * (x - mu_g) for x in ri) / len(ri))
+                var_g = (second_moments_sum / n_traj) if n_traj > 0 else 0.0
+                sd_g = math.sqrt(var_g + eps)
         else:
-            # 拉平：把本组所有 step 拼在一起
-            flat = []
+            # === 拉平：两遍流式统计（避免 flat 列表与 tensor 转换的巨大开销）===
+            total_cnt = 0
+            total_sum = 0.0
+            # pass1: 统计全组总步数与总和 → 均值
             for i in idxs:
-                flat.extend(step_rewards_raw[i])
-            if len(flat) == 0:
+                ri = step_rewards_raw[i]
+                if not ri:
+                    continue
+                total_cnt += len(ri)
+                total_sum += math.fsum(ri)
+
+            if total_cnt == 0:
                 mu_g, sd_g = 0.0, 1.0
             else:
-                t = torch.tensor(flat, dtype=torch.float32)
-                mu_g = float(t.mean().item())
-                sd_g = float(max(t.std(unbiased=False).item(), hyper.eps))
+                mu_g = total_sum / total_cnt
+                # pass2: 累加二阶偏差 → population variance（与 unbiased=False 对齐）
+                M2 = 0.0
+                for i in idxs:
+                    ri = step_rewards_raw[i]
+                    if not ri:
+                        continue
+                    M2 += math.fsum((x - mu_g) * (x - mu_g) for x in ri)
+                var = M2 / total_cnt
+                sd = math.sqrt(var)
+                sd_g = sd if sd >= eps else eps
 
         inv = 1.0 / (sd_g + 1e-12)
         for i in idxs:
@@ -113,8 +134,11 @@ def _group_zscore_on_steps(
             if not ri:
                 step_rewards_std[i] = []
             else:
+                # 与原逻辑一致：按组统计量逐步标准化
                 step_rewards_std[i] = [float((x - mu_g) * inv) for x in ri]
+
     return step_rewards_std
+
 
 def _per_traj_scale_to_target_sum(
     r_std: List[float],
@@ -880,15 +904,10 @@ def compute_prm_grpo_advantages(
     # ---- 4. 方案选择阶段：根据scheme选择具体的奖励构造方案 ----
     extra_metrics = {}
     scheme = (scheme or "allocation_c").lower()
-    if scheme == "fix":
-        # 方案1：fix —— 固定基数奖励构造 + 轨迹最后step的ORM符号调整
-        step_rewards = _build_fix(orm_scores, step_flags, step_ids, group_ids, hyper)
-    elif scheme == "allocation":
+
+    if scheme == "allocation":
         # 方案2：allocation —— 一致性权重瓜分 + 组内减均值中心化
         step_rewards, extra_metrics = _build_allocation(orm_scores, step_flags, step_ids, group_ids, hyper)
-    elif scheme == "allocation_c":
-        # 方案3：allocation_c —— 一致性瓜分 → 组内归一化 → 按比例缩放投影
-        step_rewards = _build_allocation_c(orm_scores, step_flags, step_ids, group_ids, hyper)
     elif scheme == "decouple":
         # 方案4：decouple —— PRM和ORM分别标准化后组合
         step_rewards, extra_metrics = _build_decouple(orm_scores, step_flags, step_ids, group_ids, hyper,)

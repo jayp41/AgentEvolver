@@ -897,7 +897,8 @@ def compute_prm_grpo_advantages(
     # ---- 3. ORM处理：计算ORM分数 ----
     # 对token-level奖励求和得到轨迹级ORM分数，用于各个方案的奖励构造
     orm_sum = token_level_rewards.sum(dim=1)   # (B,)
-    orm_scores = torch.where(orm_sum > 0, torch.ones_like(orm_sum), -torch.ones_like(orm_sum)).to(dtype=torch.float32)
+    # orm_scores = torch.where(orm_sum > 0, torch.ones_like(orm_sum), -torch.ones_like(orm_sum)).to(dtype=torch.float32)
+    orm_scores = torch.where(orm_sum > 0.5, torch.ones_like(orm_sum), -torch.ones_like(orm_sum)).to(dtype=torch.float32)
 
     # ---- 4. 方案选择阶段：根据scheme选择具体的奖励构造方案 ----
     extra_metrics = {}

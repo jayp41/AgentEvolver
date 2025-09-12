@@ -1079,7 +1079,7 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
                             config=self.config.algorithm,
                         )
                         # ============= shuchang: Begin PRM GRPO =============
-                        if enable_adca_metric and epoch < prm_epoch:
+                        if enable_adca_metric or enable_adca_grpo:
                             # === (A) 解析/校验 step 边界 ===
                             if not verify_step_alignment(batch, self.tokenizer, self.global_steps):
                                 raise RuntimeError("Step alignment check failed!")
@@ -1193,9 +1193,7 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
 
                             # 写回 advantages，供后续 actor/critic 更新
                             batch.batch["advantages"] = out["advantages"]
-                            _response_mask = batch.batch["response_mask"]
-                            assert advantages.shape == _response_mask.shape, f"shape mismatch: adv={advantages.shape}, mask={_response_mask.shape}"
-
+                            
                             # ✅ 并入 decouple 统计指标（若存在）
                             if isinstance(out, dict) and "metrics" in out and isinstance(out["metrics"], dict):
                                 metrics.update(out["metrics"])

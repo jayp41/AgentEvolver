@@ -181,7 +181,6 @@ def compute_grpo_outcome_advantage(
 
     with torch.no_grad():
         bsz = scores.shape[0]
-        batch_std=torch.std(scores)
         
         for i in range(bsz):
             id2score[index[i]].append(scores[i])
@@ -199,9 +198,9 @@ def compute_grpo_outcome_advantage(
                 scores[i] = (scores[i] - id2mean[index[i]]) / (id2std[index[i]] + epsilon)
             else:
                 scores[i] = scores[i] - id2mean[index[i]]
-                # normalize by batch std
+                # no std
                 # 假设 llm judge 对于不易区分的 sample 会输出方差极小的 reward，我们采取 batch std 来动态降低其权重
-                scores[i] = scores[i] / (batch_std + epsilon)
+                # scores[i] = scores[i] / (batch_std + epsilon)
         scores = scores.unsqueeze(-1) * response_mask
 
     return scores, scores
@@ -490,10 +489,14 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
             assert isinstance(val_seed_dataset,RLHFDataset), "train_dataset must be RLHFDataset"
             self.val_task_manager.load_tasks_from_dataset(val_seed_dataset,env_type=self.config.env_service.env_type)
         else:
-            for split in ['val','dev']:
-                if self.val_task_manager.load_tasks_from_environment(env_client,env_type=self.config.env_service.env_type,split=split)>0:
-                    break
-
+            if 'val_on_test' not in os.environ.get('DEBUG_ARG',''):
+                for split in ['val','dev']:
+                    if self.val_task_manager.load_tasks_from_environment(env_client,env_type=self.config.env_service.env_type,split=split)>0:
+                        break
+            else:
+                logger.warning("using test_normal as val dataset")
+                self.val_task_manager.load_tasks_from_environment(env_client,env_type=self.config.env_service.env_type,split="test_normal")
+        
         self.train_dataset=self.train_task_manager.get_or_load_full_dataset(filepath=self.config.task_manager.train_data_path,tokenizer=self.tokenizer,config=self.config.data,processor=self.processor)
         # although limiting dataset to only the original is possibile with strategy, we want to avoid the rollout process on val data.
         self.val_dataset=self.val_task_manager.get_original_dataset(tokenizer=self.tokenizer,config=self.config.data,processor=self.processor)

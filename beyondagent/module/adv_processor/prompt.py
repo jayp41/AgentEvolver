@@ -1,6 +1,29 @@
 import torch
-THREASHOLD = 0.5
-def get_positive_mask(scores: torch.Tensor | float, threshold: float = THREASHOLD) -> torch.Tensor | bool:
+from beyondagent.module.adv_processor.candidate_prompt import sys_msg_1003, THRESHOLD
+
+
+# 写一个函数，如果THRESHOLD=0.5那么直接return score，如果THRESHOLD=0，那么 score = (score -0.5) * 2 
+def rescale_score(score: float, threshold: float = THRESHOLD) -> float:
+    """
+    Rescales the input score based on the specified threshold.
+    If the threshold is 0.5, the score is returned as is.
+    If the threshold is 0, the score is rescaled to range from -1 to 1.
+
+    Args:
+        score (float): The input score to be rescaled.
+        threshold (float): The threshold value for rescaling. Default is 0.
+
+    Returns:
+        float: The rescaled score.
+    """
+    if threshold == 0.5:
+        return score
+    elif threshold == 0:
+        return (score - 0.5) * 2
+    else:
+        raise ValueError("Threshold must be either 0 or 0.5.")
+
+def get_positive_mask(scores: torch.Tensor | float, threshold: float = THRESHOLD) -> torch.Tensor | bool:
     """
     根据给定的阈值判断分数是否为正向。
     这个函数可以处理单个浮点数或整个PyTorch张量。
@@ -65,7 +88,7 @@ def build_batch_adv_evaluation_prompt(
     # )
     
     # prompt1
-    sys_msg = """You are an expert *process* reward evaluator.
+    sys_msg = f"""You are an expert *process* reward evaluator.
 
 The single message you receive always contains three labelled sections:
   1. OVERALL ADVANTAGE – a scalar summarising the final answer quality.
@@ -73,9 +96,9 @@ The single message you receive always contains three labelled sections:
   3. SOLUTION TRAJECTORY – a numbered list of assistant steps.
 
 Evaluation rule:
-• If OVERALL ADVANTAGE is **positive (> 0.5)**, judge each step by whether its ACTION
+• If OVERALL ADVANTAGE is **positive (> {THRESHOLD:+.1f})**, judge each step by whether its ACTION
   makes the overall answer *even better* than before (incremental improvement).
-• If OVERALL ADVANTAGE is **negative (≤ 0.5)**, judge each step by whether it *actively
+• If OVERALL ADVANTAGE is **negative (≤ {THRESHOLD:+.1f})**, judge each step by whether it *actively
   corrects the existing error*. Mark GOOD **only** when the ACTION clearly fixes or
   moves the answer towards correctness; otherwise mark BAD.
 
@@ -84,7 +107,7 @@ of the ACTION (and OBSERVATION if present).
 
 Reply IN THE REQUIRED OUTPUT FORMAT and output nothing else."""
     
-    sys_msg = """You are an expert *process reward evaluator*, specializing in **attributional analysis** of multi-step solution trajectories.
+    sys_msg = f"""You are an expert *process reward evaluator*, specializing in **attributional analysis** of multi-step solution trajectories.
 
 **INPUT STRUCTURE:** The single message you receive always contains three labelled sections:
   1.  **TASK DESCRIPTION**   – The user's original request.
@@ -95,14 +118,14 @@ Reply IN THE REQUIRED OUTPUT FORMAT and output nothing else."""
 
 **EVALUATION RULES (By Score Sign):**
 
-*   **If OVERALL PERFORMANCE SCORE is POSITIVE (> 0.5):**
+*   **If OVERALL PERFORMANCE SCORE is POSITIVE (> {THRESHOLD:+.1f}):**
     *   An individual step is classified as **GOOD** if its `ACTION` (and its result, if `OBSERVATION` is present) **contributed positively** to achieving the final advantageous outcome. This includes:
         *   Making a significant **incremental improvement** towards the solution.
         *   **Correctly executing** a necessary sub-task.
         *   **Preserving or building upon** correct prior steps.
     *   An individual step is classified as **BAD** if its `ACTION` (or result) was **neutral, irrelevant, or detrimental** to the eventual positive outcome.
 
-*   **If OVERALL PERFORMANCE SCORE is NEGATIVE (≤ 0.5):**
+*   **If OVERALL PERFORMANCE SCORE is NEGATIVE (≤ {THRESHOLD:+.1f}):**
     *   An individual step is classified as **GOOD** **only** if its `ACTION` (and its result, if `OBSERVATION` is present) **actively attempted to mitigate or correct** an existing problem or error trajectory. Specifically:
         *   **Successfully fixing** an earlier error.
         *   **Actively moving the solution back towards correctness** after a misstep.
@@ -193,41 +216,42 @@ def build_batch_reward_evaluation_prompt(
     is_pos = get_positive_mask(overall_adv)
     polarity = "positive" if is_pos else "negative"
     
-    sys_msg = """You are an expert *process reward evaluator*, specializing in **attributional analysis** of multi-step solution trajectories.
+#     sys_msg = f"""You are an expert *process reward evaluator*, specializing in **attributional analysis** of multi-step solution trajectories.
 
-**INPUT STRUCTURE:** The single message you receive always contains three labelled sections:
-  1.  **TASK DESCRIPTION**   – The user's original request.
-  2.  **SOLUTION TRAJECTORY** – A strictly numbered list of assistant steps. Each step describes an `ACTION` taken (and optionally an `OBSERVATION`).
-  3.  **OVERALL REWARD SCORE** – A scalar value representing the environment's final judgment on task completion. **>0** indicates the task was **successfully completed**. **≤0** indicates the task **failed or was incomplete**.
+# **INPUT STRUCTURE:** The single message you receive always contains three labelled sections:
+#   1.  **TASK DESCRIPTION**   – The user's original request.
+#   2.  **SOLUTION TRAJECTORY** – A strictly numbered list of assistant steps. Each step describes an `ACTION` taken (and optionally an `OBSERVATION`).
+#   3.  **OVERALL REWARD SCORE** – A scalar value representing the environment's final judgment on task completion. **>0** indicates the task was **successfully completed**. **≤0** indicates the task **failed or was incomplete**.
 
-**YOUR TASK (STEP-LEVEL ATTRIBUTION):** Analyze how each step contributed to the final task outcome (success/failure).
+# **YOUR TASK (STEP-LEVEL ATTRIBUTION):** Analyze how each step contributed to the final task outcome (success/failure).
 
-**EVALUATION RULES:**
+# **EVALUATION RULES:**
 
-*   **If OVERALL REWARD SCORE is POSITIVE (> 0.5) - SUCCESSFUL COMPLETION:**
-    *   Mark a step as **GOOD** if it **directly advanced progress** toward successful task completion:
-        *   Correctly implementing required functionality
-        *   Making measurable progress on the core objective  
-        *   Successfully handling necessary sub-tasks
-    *   Mark a step as **BAD** if it was **counterproductive or irrelevant** to task success:
-        *   Introducing errors or taking wrong approaches
-        *   Wasting effort on irrelevant activities
-        *   Making decisions that hindered overall progress
+# *   **If OVERALL REWARD SCORE is POSITIVE (> {THRESHOLD:+.1f}) - SUCCESSFUL COMPLETION:**
+#     *   Mark a step as **GOOD** if it **directly advanced progress** toward successful task completion:
+#         *   Correctly implementing required functionality
+#         *   Making measurable progress on the core objective  
+#         *   Successfully handling necessary sub-tasks
+#     *   Mark a step as **BAD** if it was **counterproductive or irrelevant** to task success:
+#         *   Introducing errors or taking wrong approaches
+#         *   Wasting effort on irrelevant activities
+#         *   Making decisions that hindered overall progress
 
-*   **If OVERALL REWARD SCORE is NON-POSITIVE (≤ 0.5) - TASK FAILURE:**
-    *   Mark a step as **GOOD** **only if** it **attempted genuine error correction**:
-        *   Identifying and diagnosing specific problems
-        *   Implementing concrete fixes with observable improvement
-        *   Preventing further deterioration of the situation
-    *   Mark a step as **BAD** if it **contributed to or failed to prevent failure**:
-        *   Continuing ineffective approaches despite warning signs
-        *   Introducing new problems or complications  
-        *   Missing opportunities to correct course
+# *   **If OVERALL REWARD SCORE is NON-POSITIVE (≤ {THRESHOLD:+.1f}) - TASK FAILURE:**
+#     *   Mark a step as **GOOD** **only if** it **attempted genuine error correction**:
+#         *   Identifying and diagnosing specific problems
+#         *   Implementing concrete fixes with observable improvement
+#         *   Preventing further deterioration of the situation
+#     *   Mark a step as **BAD** if it **contributed to or failed to prevent failure**:
+#         *   Continuing ineffective approaches despite warning signs
+#         *   Introducing new problems or complications  
+#         *   Missing opportunities to correct course
 
-**FOCUS:** Judge based on **objective contribution to task completion**, not effort or good intentions.
+# **FOCUS:** Judge based on **objective contribution to task completion**, not effort or good intentions.
 
-**OUTPUT FORMAT:** Reply IN THE REQUIRED OUTPUT FORMAT and output nothing else."""
+# **OUTPUT FORMAT:** Reply IN THE REQUIRED OUTPUT FORMAT and output nothing else."""
 
+    sys_msg = sys_msg_1003
     def _trim(s: str) -> str:
         if not s: return ""
         return s if len(s) <= max_step_chars else s[:max_step_chars] + "\n…"  # ⭐ Trims the string to the maximum allowed length

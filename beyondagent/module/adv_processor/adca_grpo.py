@@ -5,7 +5,7 @@ from typing import List, Dict, Optional
 from dataclasses import dataclass
 import torch
 import math
-from beyondagent.module.adv_processor.prompt import get_positive_mask
+from beyondagent.module.adv_processor.prompt import get_positive_mask, rescale_score
 
 # =========================
 # Hyper & small utilities
@@ -243,7 +243,7 @@ def _build_allocation(
 
         # 根据ORM分数符号确定轨迹类型和权重分配策略
         raw_orm = float(orm_scores[i].item())
-        is_success = bool(get_positive_mask(raw_orm))
+        is_success = bool(get_positive_mask(raw_orm, threshold=0.5))
 
         # 对齐 flags
         flags_i = _align_flags(step_flags[i] if i < len(step_flags) else [], K, is_success)
@@ -285,7 +285,7 @@ def _build_allocation(
 
         # 监控：pre-norm 不变量（sum(r_raw) 与 ORM 符号应一致）
         raw_sum = sum(r_raw)
-        is_raw_sum_positive = get_positive_mask(raw_sum, threshold=0.0)
+        # is_raw_sum_positive = get_positive_mask(raw_sum, threshold=0.0)
         raw_orm_sign = 1.0 if is_success else -1.0
         pre_norm_sign_agree_flags.append(1.0 if (raw_sum * raw_orm_sign) > 0 else 0.0)
 
@@ -602,6 +602,8 @@ def _build_decouple(
                     combined_reward = alpha * prm_reward
             elif orm_distribution == "all_steps":
                 combined_reward = alpha * prm_reward + orm_std
+            elif orm_distribution == "only_prm":
+                combined_reward = prm_reward
             else:
                 raise ValueError(f"Unknown orm_distribution: {orm_distribution}")
 
@@ -822,7 +824,7 @@ def compute_prm_grpo_advantages(
 
     # ---- 3. ORM处理：计算ORM分数 ----
     # 对token-level奖励求和得到轨迹级ORM分数，用于各个方案的奖励构造
-    orm_scores = token_level_rewards.sum(dim=1)   # (B,)
+    orm_scores = token_level_rewards.sum(dim=1)  
 
     # ---- 4. 方案选择阶段：根据scheme选择具体的奖励构造方案 ----
     extra_metrics = {}

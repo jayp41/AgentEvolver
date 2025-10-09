@@ -941,7 +941,9 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
 
         # load checkpoint before doing anything
         self._load_checkpoint()
-
+        # 确保训练前正常load参数，避免valid_before_train的效果过差
+        self.async_rollout_manager.wake_up()
+        self.async_rollout_manager.sleep()
         # perform validation before training
         # currently, we only support validation using the reward_function.
         if self.val_reward_fn is not None and self.config.trainer.get("val_before_train", True):
@@ -962,9 +964,7 @@ class BeyondAgentRayPPOTrainer(RayPPOTrainer):
         # we start from step 1
         self.global_steps += 1
         last_val_metrics = None
-        # # TODO shuchang 尝试在fit函数中添加让manager
-        # self.async_rollout_manager.wake_up()
-        # self.async_rollout_manager.sleep()
+        
         for epoch in range(self.config.trainer.total_epochs):
             for i, batch_dict in enumerate(self.train_dataloader):
                 metrics = {}

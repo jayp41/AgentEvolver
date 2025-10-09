@@ -15,7 +15,7 @@ from typing import List, Tuple, Dict, Optional, Literal
 import threading
 from dataclasses import dataclass, asdict
 import random
-from beyondagent.module.adv_processor.prompt import build_batch_adv_evaluation_prompt, build_batch_reward_evaluation_prompt, get_positive_mask
+from beyondagent.module.adv_processor.prompt import build_batch_adv_evaluation_prompt, build_batch_reward_evaluation_prompt, get_positive_mask, THRESHOLD, rescale_score
 
 __all__ = [
     "evaluate_step_flags_parallel",
@@ -525,7 +525,8 @@ async def evaluate_step_flags_parallel(tokenizer, batch, overall_score_source: s
         advantage = _get_overall_advantage(batch.batch["advantages"][sample_idx], sample_mask)
         orm_reward = batch.batch["token_level_rewards"][sample_idx].sum().item()
         if overall_score_source == "token_level_rewards":
-            overall_score = orm_reward
+            # 使用orm时，根据THRESHOLD进行rescale reward
+            overall_score = rescale_score(orm_reward)
         elif overall_score_source == "advantages":
             # SSA 模式：使用计算后的 advantage
             overall_score = advantage
@@ -552,7 +553,7 @@ async def evaluate_step_flags_parallel(tokenizer, batch, overall_score_source: s
             """
             # 2. 跳过 orm_reward 为负或零的样本
             # 注意：orm_reward > 0.5 才是正样本，所以 <= 0.5 都属于“负”的范畴
-            if orm_reward <= THREASHOLD:
+            if orm_reward <= THRESHOLD:
                 should_skip = True
                 skip_reason = f"orm_reward is not positive ({orm_reward:.6f})"
 
@@ -560,7 +561,7 @@ async def evaluate_step_flags_parallel(tokenizer, batch, overall_score_source: s
         if should_skip:
             print(f"[parallel_eval] Sample {sample_idx}: Skipping evaluation due to {skip_reason}. Assigning flags based on overall_score.")
             # 根据 overall_score 的正负来决定 flag 的值
-            flag_value = overall_score > THREASHOLD
+            flag_value = overall_score > THRESHOLD
             flags_per_sample[sample_idx] = [flag_value] * len(steps_struct)
 
             if save_dir:

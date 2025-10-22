@@ -6,14 +6,13 @@ import time
 import sys
 import os
 from dotenv import load_dotenv
+from beyondagent.utils.daemon import LaunchCommandWhenAbsent
 
 load_dotenv()
-
-BACK_TARGETS = os.environ.get('BACK_TARGETS', './config,./beyondagent,./context_manager_templates').split(',')
-
+BACK_TARGETS = os.environ.get('BACK_TARGETS', './config,./beyondagent').split(',')
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='BA Launcher')
+    parser = argparse.ArgumentParser(description='The launcher of agentevolver.')
     parser.add_argument(
         '--target',
         type=str,
@@ -34,33 +33,52 @@ def parse_args():
         help='Path to configuration file'
     )
     parser.add_argument('--with-appworld',
-        action='store_true',
+        action='store_true',  # Changed from store_true to action='store_true'
         default=False,
         help='Launch appworld'
     )
     parser.add_argument('--with-webshop',
-        action='store_true',
+        action='store_true',  # Changed from store_true to action='store_true'
         default=False,
         help='Launch webshop'
     )
+    parser.add_argument('--with-bfcl',
+        action='store_true',  # Changed from store_true to action='store_true'
+        default=False,
+        help='Launch bfcl'
+    )
     parser.add_argument('--with-logview',
-        action='store_true',
+        action='store_true',  # Changed from store_true to action='store_true'
         default=False,
         help='Launch logview'
     )
     parser.add_argument('--with-crafters',
-        action='store_true',
+        action='store_true',  # Changed from store_true to action='store_true'
         default=False,
         help='Launch Crafters Env Simulation'
     )
     parser.add_argument('--reboot',
-        action='store_true',
+        action='store_true',  # Changed from store_true to action='store_true'
         default=False,
         help='reboot flag'
     )
 
     return parser.parse_args()
 
+
+def pty_launch(service_name: str):
+    service_path = os.environ.get(f'{service_name.upper()}_PATH')
+    service_script = os.environ.get(f'{service_name.upper()}_SCRIPT')
+    companion = LaunchCommandWhenAbsent(
+        full_argument_list=[service_script],
+        dir=service_path,
+        tag="appworld_env_service",
+        use_pty=True
+    )
+    companion.launch(
+        launch_wait_time=1800,
+        success_std_string="Starting server on",
+    )
 def main():
     args = parse_args()
 
@@ -76,10 +94,24 @@ def main():
             with open(yaml_path, 'r') as file:
                 config = yaml.safe_load(file)
             exp_name = config.get('trainer').get('experiment_name')
-            exp_name = exp_name.replace('|', '-')
+            if exp_name is None or exp_name == 'read_yaml_name':
+                if exp_name is not None: exp_name = exp_name.replace('|', '-')
+                exp_name = os.path.basename(yaml_path).replace('.yaml', '')
+            else:
+                exp_name = exp_name.replace('|', '-')
+
+            print('----------------------------------------')
+            backup_dir = os.path.join('launcher_record', exp_name, 'backup')
+            yaml_backup_dst = os.path.join('launcher_record', exp_name, 'yaml_backup.yaml')
+            exe_yaml_path = yaml_backup_dst
+            exe_exp_base = os.path.dirname(yaml_backup_dst)
+            print('Experiment Name:', exp_name)
+            print('Experiment Backup Dir:', backup_dir)
+            print('Experiment Yaml Dir:', yaml_backup_dst)
+            print('----------------------------------------')
+            time.sleep(2)
 
             ## 1. check exp_base/backup exist
-            backup_dir = os.path.join(exp_base, exp_name, 'backup')
             if not os.path.exists(backup_dir):
                 os.makedirs(backup_dir)
             else:
@@ -95,8 +127,16 @@ def main():
 
             ## 3. copy yaml to backup
             yaml_backup_src = yaml_path
-            yaml_backup_dst = os.path.join(exp_base, exp_name, 'yaml_backup.yaml')
             shutil.copyfile(yaml_backup_src, yaml_backup_dst)
+
+            ## 4. edit new yaml
+            yaml_path = yaml_backup_dst
+            # now, replace the trainer.experiment_name
+            with open(yaml_path, 'r') as file:
+                config = yaml.safe_load(file)
+            config['trainer']['experiment_name'] = exp_name
+            with open(yaml_path, 'w') as file:
+                yaml.dump(config, file)
 
         else:
             raise FileNotFoundError(f"Configuration file not found: {exp_base}")
@@ -109,130 +149,34 @@ def main():
             print("Debug mode is ON")
         else:
             print("Debug mode is OFF")
-    else:
-        assert args.with_appworld or args.with_webshop or args.with_logview or args.with_crafters, "You must at least do something."
 
     if args.with_appworld:
-        from beyondagent.utils.daemon import LaunchCommandWhenAbsent
-        appworld_path = os.environ.get('APPWORLD_PATH')
-        appworld_activation = os.environ.get('APPWORLD_ACTIVATION')
-        if appworld_path and os.path.exists(appworld_path):
-            companion = LaunchCommandWhenAbsent(
-                full_argument_list=[appworld_activation],
-                dir=appworld_path,
-                tag="appworld_env_service",
-                use_pty=True
-            )
-            companion.launch(
-                launch_wait_time=1800,
-                success_std_string="Starting server on",
-            )
-        else:
-            raise RuntimeError("EnvService not found")
-
+        # test done
+        pty_launch("appworld")
 
     if args.with_crafters:
-        from beyondagent.utils.daemon import LaunchCommandWhenAbsent
-        crafters_path = os.environ.get('CRAFTERS_PATH')
-        crafters_activation = os.environ.get('CRAFTERS_ACTIVATION')
-        if crafters_path and os.path.exists(crafters_path):
-            companion = LaunchCommandWhenAbsent(
-                full_argument_list=[crafters_activation],
-                dir=crafters_path,
-                tag="crafters_env_service",
-                use_pty=True
-            )
-            companion.launch(
-                launch_wait_time=1800,
-                success_std_string="Starting server on",
-            )
-        else:
-            raise RuntimeError("EnvService not found")
-
+        # test done
+        pty_launch("crafters")
 
     if args.with_webshop:
-        from beyondagent.utils.daemon import LaunchCommandWhenAbsent
-        webshop_path = os.environ.get('WEBSHOP_PATH')
-        webshop_python = os.environ.get('WEBSHOP_PYTHON')
-        webshop_port = os.environ.get('WEBSHOP_PORT', '1907')
-        webshop_env_port = os.environ.get('WEBSHOP_ENV_PORT', '8080')
-        java_home = os.environ.get('JAVA_HOME')
-        java_ld_library_path = os.environ.get('JAVA_LD_LIBRARY_PATH')
-        search_engine_path = os.environ.get('SEARCH_ENGINE_PATH')
-        webshop_root = os.environ.get('WEBSHOP_ROOT')
-        items_attr_path = os.environ.get('ITEMS_ATTR_PATH')
-        items_file_path = os.environ.get('ITEMS_FILE_PATH')
-        pythonpath = os.environ.get('PYTHONPATH')
-        if webshop_path and os.path.exists(webshop_path):
-            companion = LaunchCommandWhenAbsent(
-                full_argument_list=[
-                    webshop_python,
-                    '-m',
-                    'env_sandbox.environments.webshop.SimServer_launch',
-                    "--portal",
-                    "127.0.0.1",
-                    "--port",
-                    webshop_port,
-                ],
-                dir=webshop_path,
-                tag="webshop_sim_server"
-            )
+        # not tesed
+        pty_launch("webshop")
 
-            companion.launch(launch_wait_time=1800, success_std_string="Uvicorn running on", env_dict={
-                "JAVA_HOME": java_home,
-                "JAVA_LD_LIBRARY_PATH": java_ld_library_path,
-                "search_engine_path": search_engine_path,
-                "webshop_root": webshop_root,
-                "ITEMS_ATTR_PATH": items_attr_path,
-                "ITEMS_FILE_PATH": items_file_path,
-                "PYTHONPATH": pythonpath
-            }, force_restart=args.reboot)
-
-            companion = LaunchCommandWhenAbsent(
-                full_argument_list=[
-                    webshop_python,
-                    '-m',
-                    'env_sandbox.env_service',
-                    "--env",
-                    "webshop",
-                    "--portal",
-                    "127.0.0.1",
-                    "--port",
-                    webshop_env_port,
-                ],
-                dir=webshop_path,
-                tag="webshop_env_service"
-            )
-            companion.launch(launch_wait_time=1800,success_std_string="Uvicorn running on", env_dict={
-                "JAVA_HOME": java_home,
-                "JAVA_LD_LIBRARY_PATH": java_ld_library_path
-            }, force_restart=args.reboot)
-        else:
-            raise RuntimeError("EnvService not found")
-
-
-
+    if args.with_bfcl:
+        pty_launch("bfcl")
 
     if args.with_logview:
-        from beyondagent.utils.daemon import LaunchCommandWhenAbsent
-        logview_nvm_dir = os.environ.get('LOGVIEW_NVM_DIR')
-        logview_nvm_bin = os.environ.get('LOGVIEW_NVM_BIN')
-        logview_path = os.environ.get('LOGVIEW_PATH')
+
         companion = LaunchCommandWhenAbsent(
             full_argument_list=[
                 sys.executable,
                 '-m',
-                'web_display.go',
+                'web_display.start_web',
             ],
             dir='./',
             tag="logview"
         )
-        companion.launch(launch_wait_time=1800, success_std_string="Server running on", env_dict={
-            'NVM_DIR': logview_nvm_dir,
-            'NVM_BIN': logview_nvm_bin,
-            'PATH': logview_path + os.environ.get('PATH', '')
-        })
-
+        companion.launch(launch_wait_time=1800,success_std_string="Uvicorn running on", env_dict={})
 
     if args.conf:
         # let's begin the training process
@@ -241,9 +185,9 @@ def main():
             '-m',
             args.target,
             '--config-path',
-            os.path.abspath(exp_base),
+            os.path.abspath(exe_exp_base),
             '--config-name',
-            os.path.basename(yaml_path),
+            os.path.basename(exe_yaml_path),
         ]
 
         if args.with_logview:

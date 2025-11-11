@@ -20,8 +20,7 @@ source <YOUR_CONDA_PATH>/etc/profile.d/conda.sh
 2. Configure API Endpoints
 
 ```bash
-export OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-export OPENAI_API_KEY="<YOUR_API_KEY>"
+export DASHSCOPE_API_KEY="<YOUR_API_KEY>"
 export HF_ENDPOINT=https://hf-mirror.com
 ```
 
